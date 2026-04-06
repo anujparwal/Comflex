@@ -1,0 +1,95 @@
+/**
+ * Comflex Backend — Express + Socket.IO Server Entry Point
+ *
+ * Initializes Express, registers middleware/routes, seeds admin,
+ * initializes Socket.IO for real-time chat, and starts listening.
+ */
+
+const http = require('http');
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const cookieParser = require('cookie-parser');
+const env = require('./config/env');
+const errorHandler = require('./middleware/errorHandler');
+const { seedAdmin } = require('./services/seedService');
+const { initSocket } = require('./services/chatSocketService');
+
+// Route imports
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/users');
+const adminRoutes = require('./routes/admin');
+const systemRoutes = require('./routes/system');
+const groupRoutes = require('./routes/groups');
+
+const app = express();
+const httpServer = http.createServer(app);
+
+// ============================================================
+// MIDDLEWARE
+// ============================================================
+
+// CORS — allow frontend origin
+app.use(cors({
+  origin: env.FRONTEND_URL,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// Parse JSON and URL-encoded bodies
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// Serve uploaded files (avatars) — dev only; use S3/CDN in production
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// ============================================================
+// ROUTES
+// ============================================================
+
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/system', systemRoutes);
+app.use('/api/v1/groups', groupRoutes);
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ============================================================
+// ERROR HANDLING (must be registered after all routes)
+// ============================================================
+
+app.use(errorHandler);
+
+// ============================================================
+// START SERVER
+// ============================================================
+
+async function startServer() {
+  try {
+    // Seed the admin user on first boot (idempotent)
+    await seedAdmin();
+
+    // Initialize Socket.IO for real-time chat
+    initSocket(httpServer, env.FRONTEND_URL);
+
+    httpServer.listen(env.PORT, () => {
+      console.log(`\n🚀 Comflex Backend running on http://localhost:${env.PORT}`);
+      console.log(`   Environment: ${env.NODE_ENV}`);
+      console.log(`   Frontend URL: ${env.FRONTEND_URL}`);
+      console.log(`   WebSocket: enabled\n`);
+    });
+  } catch (err) {
+    console.error('❌ Failed to start server:', err);
+    process.exit(1);
+  }
+}
+
+startServer();
+
+module.exports = app;

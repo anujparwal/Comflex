@@ -1,0 +1,132 @@
+// Comflex Platform — Prisma Schema
+// Database: MongoDB
+// See RULES.md for data model documentation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// USER — Core user model with global ring and profile data
+// ============================================================
+model User {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  email          String   @unique
+  password       String   // bcrypt hashed
+  displayName    String
+  avatarUrl      String?
+  bio            String?  @default("")
+  globalRing     Int      @default(3) // 0=Admin, 1=Manager, 2=Elevated, 3=Member, 4+=Restricted
+  cohortTags     String[] // e.g. ["cohort-28", "cohort-28-27"]
+  cfHandle       String?
+  cfRating       Int?
+  creditBalance  Int      @default(0)
+  displayBadges  String[] // badge IDs currently displayed (max 5)
+  refreshToken     String?  // hashed refresh token
+  resetToken       String?  // password reset token (hashed)
+  resetTokenExpiry DateTime? // expiry for the reset token
+  createdAt        DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  groupMemberships GroupMember[]
+  messages         Message[]
+}
+
+// ============================================================
+// INSTITUTION CONFIG — Singleton storing platform-wide settings
+// Configured by Seed Admin on first boot
+// ============================================================
+model InstitutionConfig {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  name              String   @default("Unconfigured Institution")
+  domain            String   @default("")
+  logoUrl           String?
+  isConfigured      Boolean  @default(false) // Gates user registration
+  emailParsingRules Json?    // { pattern: string, captureGroup: number, yearOffset: number }
+  cohortConfig      Json?    // { seniorOffset: -1, juniorOffset: +1, seniorAutoElevate: true }
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// ============================================================
+// COHORT GROUP — A group (primary cohort or cross-year)
+// Created automatically when users are tagged
+// ============================================================
+model CohortGroup {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique // e.g. "cohort-28", "cohort-28-27"
+  displayName String?          // e.g. "Class of 2028", "2028-2027 Cross-Year"
+  description String?          // group description
+  avatarUrl   String?          // group avatar image
+  type        String           // "primary" | "cross-year"
+  createdAt   DateTime @default(now())
+
+  // Relations
+  members GroupMember[]
+  mutes   MuteRecord[]
+  messages Message[]
+}
+
+// ============================================================
+// GROUP MEMBER — Per-group membership with ring and permissions
+// A user's ring and permissions can vary per group
+// ============================================================
+model GroupMember {
+  id          String @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String @db.ObjectId
+  groupId     String @db.ObjectId
+  ring        Int    @default(3) // Per-group ring level
+  permissions Json?  // Granular permissions override (see RULES.md §6)
+
+  joinedAt DateTime @default(now())
+
+  // Relations
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group CohortGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  // Unique constraint: one membership per user per group
+  @@unique([userId, groupId])
+}
+
+// ============================================================
+// MESSAGE — Chat message in a group (Phase 2 but schema added now)
+// ============================================================
+model Message {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  groupId     String   @db.ObjectId
+  authorId    String   @db.ObjectId
+  content     String
+  attachments String[] @default([])
+  mentions    String[] @default([])
+  isPinned    Boolean  @default(false)
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  editedAt    DateTime?
+
+  // Relations
+  group  CohortGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// MUTE RECORD — Tracks muted users per group
+// ============================================================
+model MuteRecord {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  groupId   String   @db.ObjectId
+  mutedBy   String   @db.ObjectId
+  mutedUntil DateTime
+  createdAt DateTime @default(now())
+
+  // Relations
+  group CohortGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+}
