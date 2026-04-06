@@ -888,22 +888,22 @@ RATE_LIMIT_API_PER_MIN=100
 ## 6. Roadmap & Phasing
 
 ### Phase 1 — Foundation (Weeks 1–3)
-- [ ] Set up repositories, CI/CD, and environments
-- [ ] Implement seed admin creation on first boot
-- [ ] Build Admin Dashboard (institution config + email parsing rules UI)
-- [ ] Implement auth (register, login, JWT, password reset)
-- [ ] Implement automated cohort tagging (admin-controlled rules)
-- [ ] Implement ring-based hierarchy middleware
-- [ ] Build login/registration UI
-- [ ] Build profile page UI (avatar upload, bio, badge selection)
+- [x] Set up repositories, CI/CD, and environments
+- [x] Implement seed admin creation on first boot
+- [x] Build Admin Dashboard (institution config + email parsing rules UI)
+- [x] Implement auth (register, login, JWT, password reset)
+- [x] Implement automated cohort tagging (admin-controlled rules)
+- [x] Implement ring-based hierarchy middleware
+- [x] Build login/registration UI
+- [x] Build profile page UI (avatar upload, bio, badge selection)
 
 ### Phase 2 — Chat & Groups (Weeks 4–6)
-- [ ] Build group model (CRUD, membership, ring per group)
-- [ ] Implement WebSocket chat server (send, receive, typing indicators)
-- [ ] Implement granular per-user permissions in groups
-- [ ] Build chat UI (messages, badges next to names, pinning, moderation)
-- [ ] Implement senior auto-elevation in cross-year groups
-- [ ] Build group management UI (members list, ring changes, permission toggles)
+- [x] Build group model (CRUD, membership, ring per group)
+- [x] Implement WebSocket chat server (send, receive, typing indicators)
+- [x] Implement granular per-user permissions in groups
+- [x] Build chat UI (messages, badges next to names, pinning, moderation)
+- [x] Implement senior auto-elevation in cross-year groups
+- [x] Build group management UI (members list, ring changes, permission toggles)
 
 ### Phase 3 — Economy & Engagement (Weeks 7–9)
 - [ ] Build event management (CRUD, registration, attendance, group-scoped events)
