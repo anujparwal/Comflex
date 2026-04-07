@@ -1,5 +1,6 @@
 /**
  * GroupsPage — Lists all groups the user belongs to.
+ * Admin (Ring 0) sees ALL groups on the platform.
  *
  * Clicking a group navigates to the ChatPage for that group.
  */
@@ -7,6 +8,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { groupApi } from '../api/groupApi';
+import { adminApi } from '../api/adminApi';
+import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/Layout';
 
 const TYPE_LABELS = { primary: '🎓 Cohort', 'cross-year': '🔗 Cross-Year' };
@@ -14,20 +17,33 @@ const TYPE_LABELS = { primary: '🎓 Cohort', 'cross-year': '🔗 Cross-Year' };
 export default function GroupsPage() {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const isAdmin = user?.globalRing === 0;
 
   useEffect(() => {
-    groupApi.listGroups()
-      .then((res) => setGroups(res.data.data))
+    const fetchGroups = isAdmin
+      ? adminApi.listAllGroups().then((res) => res.data.data)
+      : groupApi.listGroups().then((res) => res.data.data);
+
+    fetchGroups
+      .then((data) => setGroups(data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [isAdmin]);
 
   return (
     <Layout>
       <div className="max-w-3xl mx-auto fade-in">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold">Groups</h1>
-          <span className="text-sm text-[var(--color-text-muted)]">{groups.length} groups</span>
+          <div className="flex items-center gap-3">
+            {isAdmin && (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--color-accent)] bg-opacity-20 text-[var(--color-accent-light)]">
+                Admin View — All Groups
+              </span>
+            )}
+            <span className="text-sm text-[var(--color-text-muted)]">{groups.length} groups</span>
+          </div>
         </div>
 
         {loading ? (
@@ -63,7 +79,7 @@ export default function GroupsPage() {
                       {TYPE_LABELS[group.type] || group.type}
                     </span>
                     <span className="text-xs text-[var(--color-text-muted)]">
-                      👥 {group.memberCount || 0} members
+                      👥 {group.memberCount || group._count?.members || 0} members
                     </span>
                     {group.description && (
                       <span className="text-xs text-[var(--color-text-muted)] truncate hidden md:inline">
@@ -74,9 +90,15 @@ export default function GroupsPage() {
                 </div>
 
                 {/* Ring badge */}
-                <span className={`px-2.5 py-1 rounded-full text-xs text-white ring-badge-${Math.min(group.userRing, 3)}`}>
-                  Ring {group.userRing}
-                </span>
+                {isAdmin ? (
+                  <span className="px-2.5 py-1 rounded-full text-xs text-white bg-[var(--color-accent)]">
+                    Admin
+                  </span>
+                ) : (
+                  <span className={`px-2.5 py-1 rounded-full text-xs text-white ring-badge-${Math.min(group.userRing, 3)}`}>
+                    Ring {group.userRing}
+                  </span>
+                )}
               </Link>
             ))}
           </div>
@@ -85,3 +107,4 @@ export default function GroupsPage() {
     </Layout>
   );
 }
+

@@ -1,14 +1,16 @@
 /**
  * ProtectedRoute — Auth-gated route wrapper.
  * Redirects unauthenticated users to /login.
+ * Redirects users missing username/password to /set-password.
  * Optionally checks ring level for admin-only routes.
  */
 
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 export default function ProtectedRoute({ children, maxRing = 3 }) {
   const { isAuthenticated, user, loading } = useAuth();
+  const location = useLocation();
 
   // Show nothing while checking auth state
   if (loading) {
@@ -22,6 +24,12 @@ export default function ProtectedRoute({ children, maxRing = 3 }) {
   // Not logged in → redirect to login
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Check if user needs to complete onboarding (username + password)
+  // Skip this check if we're already on /set-password to avoid redirect loop
+  if (location.pathname !== '/set-password' && (!user.username || !user.hasPassword)) {
+    return <Navigate to="/set-password" replace />;
   }
 
   // Ring check — if user's ring is above the required max, block access
@@ -42,3 +50,4 @@ export default function ProtectedRoute({ children, maxRing = 3 }) {
 
   return children;
 }
+

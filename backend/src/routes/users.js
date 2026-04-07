@@ -128,4 +128,95 @@ router.get('/me/tags', authMiddleware, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/v1/users/search?q=<query>
+ * Public (authenticated) user search — for friend finder, mentions, etc.
+ * Searches by partial username, email, or displayName.
+ * Returns max 10 results, excludes the requesting user.
+ */
+router.get('/search', authMiddleware, async (req, res, next) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) {
+      return success(res, []);
+    }
+
+    const users = await require('../prisma').user.findMany({
+      where: {
+        id: { not: req.user.id },
+        OR: [
+          { username: { startsWith: q, mode: 'insensitive' } },
+          { email: { startsWith: q, mode: 'insensitive' } },
+          { displayName: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        displayName: true,
+        username: true,
+        avatarUrl: true,
+        email: true,
+        bio: true,
+        globalRing: true,
+        cohortTags: true,
+      },
+      take: 10,
+      orderBy: { displayName: 'asc' },
+    });
+
+    return success(res, users);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/users/:id/profile
+ * View any user's public profile by ID.
+ */
+router.get('/:id/profile', authMiddleware, async (req, res, next) => {
+  try {
+    const prisma = require('../prisma');
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        displayName: true,
+        username: true,
+        avatarUrl: true,
+        bio: true,
+        globalRing: true,
+        cohortTags: true,
+        cfHandle: true,
+        cfRating: true,
+        displayBadges: true,
+        creditBalance: true,
+        createdAt: true,
+      },
+    });
+    if (!user) {
+      return error(res, 'USER_NOT_FOUND', 'User not found.', 404);
+    }
+
+    // Check friendship status with requesting user
+    const friendship = await prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId: req.user.id, addresseeId: req.params.id },
+          { requesterId: req.params.id, addresseeId: req.user.id },
+        ],
+      },
+    });
+
+    return success(res, {
+      ...user,
+      friendshipStatus: friendship ? friendship.status : null,
+      friendshipId: friendship ? friendship.id : null,
+      isRequester: friendship ? friendship.requesterId === req.user.id : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
