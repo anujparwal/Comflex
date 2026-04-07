@@ -1,12 +1,12 @@
 /**
  * Auth Routes — /api/v1/auth/*
  * 
- * Handles: register, login, logout, refresh token.
- * See /docs/api/auth.md for the full contract.
+ * Handles: register, login, logout, refresh token, Google OAuth,
+ * password management, username, email verification.
  */
 
 const express = require('express');
-const { body, validationResult } = require('express-validator');
+const { body, param, validationResult } = require('express-validator');
 const authService = require('../services/authService');
 const authMiddleware = require('../middleware/auth');
 const { success, error } = require('../utils/apiResponse');
@@ -15,7 +15,7 @@ const router = express.Router();
 
 /**
  * POST /api/v1/auth/register
- * Create a new user account. Triggers cohort auto-tagging.
+ * Create a new user account (email/password — legacy flow).
  */
 router.post(
   '/register',
@@ -26,7 +26,6 @@ router.post(
   ],
   async (req, res, next) => {
     try {
-      // Validate request body
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400, 
@@ -47,8 +46,106 @@ router.post(
 );
 
 /**
+ * POST /api/v1/auth/google
+ * Login or register via Google OAuth.
+ * Expects: { idToken } from the frontend Google Sign-In.
+ */
+router.post(
+  '/google',
+  [body('idToken').notEmpty().withMessage('Google ID token is required.')],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400,
+          errors.array().map(e => ({ field: e.path, issue: e.msg }))
+        );
+      }
+
+      const result = await authService.googleLogin(req.body.idToken);
+      return success(res, result);
+    } catch (err) {
+      if (err.statusCode) {
+        return error(res, err.code, err.message, err.statusCode);
+      }
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/auth/set-password
+ * Set password for a Google-only user (no password yet).
+ * Requires authentication.
+ */
+router.post(
+  '/set-password',
+  authMiddleware,
+  [body('newPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters.')],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400,
+          errors.array().map(e => ({ field: e.path, issue: e.msg }))
+        );
+      }
+
+      const result = await authService.setPassword(req.user.id, req.body.newPassword);
+      return success(res, result);
+    } catch (err) {
+      if (err.statusCode) {
+        return error(res, err.code, err.message, err.statusCode);
+      }
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/auth/set-username
+ * Choose a username. Requires authentication.
+ */
+router.post(
+  '/set-username',
+  authMiddleware,
+  [body('username').trim().isLength({ min: 3, max: 30 }).withMessage('Username must be 3–30 characters.')],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400,
+          errors.array().map(e => ({ field: e.path, issue: e.msg }))
+        );
+      }
+
+      const result = await authService.setUsername(req.user.id, req.body.username);
+      return success(res, result);
+    } catch (err) {
+      if (err.statusCode) {
+        return error(res, err.code, err.message, err.statusCode);
+      }
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/auth/check-username/:username
+ * Check if a username is available. Public endpoint.
+ */
+router.get('/check-username/:username', async (req, res, next) => {
+  try {
+    const result = await authService.checkUsername(req.params.username);
+    return success(res, result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/v1/auth/login
- * Authenticate and receive JWT + refresh token.
+ * Authenticate with email/password and receive JWT + refresh token.
  */
 router.post(
   '/login',
@@ -119,7 +216,7 @@ router.post('/logout', authMiddleware, async (req, res, next) => {
 
 /**
  * POST /api/v1/auth/forgot-password
- * Send a password reset email (console-logged in dev).
+ * Send a password reset email.
  */
 router.post(
   '/forgot-password',
@@ -161,6 +258,33 @@ router.post(
       }
 
       const result = await authService.resetPassword(req.body.token, req.body.newPassword);
+      return success(res, result);
+    } catch (err) {
+      if (err.statusCode) {
+        return error(res, err.code, err.message, err.statusCode);
+      }
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/auth/verify-personal-email
+ * Verify a personal email using the verification token.
+ */
+router.post(
+  '/verify-personal-email',
+  [body('token').notEmpty().withMessage('Verification token is required.')],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400,
+          errors.array().map(e => ({ field: e.path, issue: e.msg }))
+        );
+      }
+
+      const result = await authService.verifyPersonalEmail(req.body.token);
       return success(res, result);
     } catch (err) {
       if (err.statusCode) {

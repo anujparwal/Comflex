@@ -59,7 +59,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
 
 /**
  * PATCH /api/v1/users/me
- * Update display name, bio, badge selection, CF handle, etc.
+ * Update display name, bio, badge selection, CF handle, personal email, etc.
  */
 router.patch(
   '/me',
@@ -69,6 +69,7 @@ router.patch(
     body('bio').optional().isLength({ max: 500 }),
     body('displayBadges').optional().isArray({ max: 5 }),
     body('cfHandle').optional().isString(),
+    body('personalEmail').optional().isEmail().withMessage('Invalid personal email.'),
   ],
   async (req, res, next) => {
     try {
@@ -77,6 +78,13 @@ router.patch(
         return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400,
           errors.array().map(e => ({ field: e.path, issue: e.msg }))
         );
+      }
+
+      // If setting personal email, trigger verification
+      if (req.body.personalEmail) {
+        const authService = require('../services/authService');
+        await authService.sendPersonalEmailVerification(req.user.id, req.body.personalEmail);
+        delete req.body.personalEmail; // Don't pass to generic update
       }
 
       const user = await userService.updateProfile(req.user.id, req.body);

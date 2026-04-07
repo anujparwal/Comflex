@@ -1,11 +1,11 @@
 /**
  * Chat Socket Service — Socket.IO WebSocket Server
  *
- * Handles real-time messaging: send/receive messages, typing indicators,
- * and moderation events (mute, kick, ring changes).
+ * Handles real-time messaging: send/receive group messages, DMs,
+ * typing indicators, and moderation events.
  *
  * Authentication: JWT verification on handshake.
- * Rooms: each group ID is a Socket.IO room.
+ * Rooms: each group ID is a Socket.IO room, each user has a personal room (user:<id>).
  */
 
 const { Server } = require('socket.io');
@@ -13,6 +13,7 @@ const { verifyAccessToken } = require('../utils/jwt');
 const prisma = require('../prisma');
 const messageService = require('./messageService');
 const groupService = require('./groupService');
+const dmService = require('./dmService');
 
 let io;
 
@@ -53,6 +54,9 @@ function initSocket(httpServer, frontendUrl) {
   io.on('connection', async (socket) => {
     console.log(`[WS] ✅ Connected: ${socket.user.email} (${socket.id})`);
 
+    // Join personal room for DM delivery
+    socket.join(`user:${socket.user.id}`);
+
     // Auto-join all group rooms the user belongs to
     try {
       const memberships = await prisma.groupMember.findMany({
@@ -62,12 +66,12 @@ function initSocket(httpServer, frontendUrl) {
       for (const m of memberships) {
         socket.join(m.groupId);
       }
-      console.log(`[WS] Joined ${memberships.length} rooms for ${socket.user.email}`);
+      console.log(`[WS] Joined ${memberships.length} group rooms + personal room for ${socket.user.email}`);
     } catch (err) {
       console.error(`[WS] Failed to join rooms for ${socket.user.email}:`, err.message);
     }
 
-    // ── message:send ──────────────────────────────────────
+    // ── message:send (group messages) ─────────────────────
     socket.on('message:send', async (data, callback) => {
       try {
         const { groupId, content, mentions = [], attachments = [] } = data;
@@ -110,7 +114,7 @@ function initSocket(httpServer, frontendUrl) {
       }
     });
 
-    // ── typing:start ────────────────────────────────────
+    // ── typing:start (groups) ────────────────────────────
     socket.on('typing:start', ({ groupId }) => {
       if (groupId) {
         socket.to(groupId).emit('typing:start', {
@@ -121,12 +125,57 @@ function initSocket(httpServer, frontendUrl) {
       }
     });
 
-    // ── typing:stop ─────────────────────────────────────
+    // ── typing:stop (groups) ─────────────────────────────
     socket.on('typing:stop', ({ groupId }) => {
       if (groupId) {
         socket.to(groupId).emit('typing:stop', {
           userId: socket.user.id,
           groupId,
+        });
+      }
+    });
+
+    // ── dm:send — Send a direct message ──────────────────
+    socket.on('dm:send', async (data, callback) => {
+      try {
+        const { receiverId, content } = data;
+        if (!receiverId || !content?.trim()) {
+          return callback?.({ error: 'receiverId and content are required.' });
+        }
+
+        const message = await dmService.sendDM(socket.user.id, receiverId, content.trim());
+
+        // Deliver to receiver's personal room
+        io.to(`user:${receiverId}`).emit('dm:new', {
+          ...message,
+          senderDisplayName: socket.user.displayName,
+        });
+
+        // Also echo back to sender
+        socket.emit('dm:new', message);
+
+        callback?.({ success: true, message });
+      } catch (err) {
+        console.error('[WS] dm:send error:', err.message);
+        callback?.({ error: err.message });
+      }
+    });
+
+    // ── dm:typing:start ──────────────────────────────────
+    socket.on('dm:typing:start', ({ receiverId }) => {
+      if (receiverId) {
+        io.to(`user:${receiverId}`).emit('dm:typing:start', {
+          userId: socket.user.id,
+          displayName: socket.user.displayName,
+        });
+      }
+    });
+
+    // ── dm:typing:stop ───────────────────────────────────
+    socket.on('dm:typing:stop', ({ receiverId }) => {
+      if (receiverId) {
+        io.to(`user:${receiverId}`).emit('dm:typing:stop', {
+          userId: socket.user.id,
         });
       }
     });
@@ -155,4 +204,11 @@ function emitToGroup(groupId, event, data) {
   if (io) io.to(groupId).emit(event, data);
 }
 
-module.exports = { initSocket, getIO, emitToGroup };
+/**
+ * Emit a DM event to a specific user.
+ */
+function emitToUser(userId, event, data) {
+  if (io) io.to(`user:${userId}`).emit(event, data);
+}
+
+module.exports = { initSocket, getIO, emitToGroup, emitToUser };

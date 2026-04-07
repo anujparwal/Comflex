@@ -1,74 +1,237 @@
-# Comflex
+# Comflex — College Community Platform
 
-A cohort-based community platform for educational institutions with ring-based access control, auto-tagging from student emails, and credit economy.
+> A modern, real-time college community platform with group chat, cohort management, friend system, and direct messaging.
 
-## Email Regex Pattern — IIITL Student Emails
+## Features
 
-### Format
+- **Google OAuth Registration** — Students sign up with their college Google account
+- **Real-time Group Chat** — WebSocket-powered messaging with typing indicators
+- **Cohort Auto-Tagging** — Automatic year/branch detection from college email
+- **Friends System** — Send/accept/reject friend requests 
+- **Direct Messaging** — 1-on-1 DMs between friends
+- **Ring-based RBAC** — Hierarchical permission system (Admin → Manager → Elevated → Member)
+- **Admin Dashboard** — Institution setup, user management, cohort configuration
+- **Auto-Join Rules** — Configure which groups users automatically join based on year/branch
+- **Pluggable Email Service** — Console (dev) or SMTP for verification and password resets
 
-IIITL student emails follow this structure:
+## Tech Stack
 
-```
-L<BranchCode><YearOfAdmission><RollNumber>@iiitl.ac.in
-```
+| Layer | Technology |
+|-------|-----------|
+| Backend | Node.js, Express, Socket.IO |
+| Database | MongoDB (Prisma ORM) |
+| Frontend | React 19, Vite, Tailwind CSS 4 |
+| Auth | JWT + Google OAuth 2.0 |
+| Email | Nodemailer (SMTP) / Console |
 
-| Segment            | Description                                      | Example  |
-|--------------------|--------------------------------------------------|----------|
-| `L`                | Fixed prefix (literal)                           | `L`      |
-| `BranchCode`       | `CS` = Computer Science, `CI` = AI, `CB` = CS-Business | `CS` |
-| `YearOfAdmission`  | 4-digit year                                     | `2022`   |
-| `RollNumber`       | 3+ digit roll number                             | `001`    |
-| `@iiitl.ac.in`     | Fixed domain                                     |          |
+---
 
-**Full example**: `LCS2022001@iiitl.ac.in` → Branch: CS, Year: 2022, Roll: 001
+## Prerequisites
 
-### Regex
+- **Node.js** ≥ 18.x ([download](https://nodejs.org))
+- **MongoDB** ≥ 6.x with replica set enabled
+- **npm** ≥ 9.x (comes with Node.js)
+- **Google Cloud** project with OAuth 2.0 credentials (for registration)
 
-```regex
-/^l(cs|ci|cb)(\d{4})(\d{3,})@iiitl\.ac\.in$/i
-```
+---
 
-| Capture Group | Extracts           | Example Match |
-|---------------|--------------------|---------------|
-| Group 1       | Branch code        | `cs`          |
-| Group 2       | Year of admission  | `2022`        |
-| Group 3       | Roll number        | `001`         |
+## Setup Instructions
 
-The `i` flag makes the match case-insensitive (handles both `LCS...` and `lcs...`).
+### 1. Clone the Repository
 
-### Building the Regex for Your Own Institution
-
-Follow these steps to adapt the pattern for a different email format:
-
-1. **Identify the fixed parts** — Characters that never change (prefix, domain).  
-   Example: `L` prefix and `@iiitl.ac.in` domain → `^l` and `@iiitl\.ac\.in$`
-
-2. **Identify the variable segments** — Parts that change per student (branch, year, roll).
-
-3. **Build capture groups** for each variable segment:
-   - **Known set of values** (e.g. branch codes) → use alternation: `(cs|ci|cb)`
-   - **Fixed-length digits** (e.g. 4-digit year) → use `(\d{4})`
-   - **Variable-length digits** (e.g. roll number) → use `(\d{3,})`
-
-4. **Combine** all parts in order: `^l(cs|ci|cb)(\d{4})(\d{3,})@iiitl\.ac\.in$`
-
-5. **Add flags** — Use `i` for case-insensitive matching.
-
-#### Example: Adapting for a Different Institution
-
-Suppose another institution uses: `<Year2Digit><DeptCode><RollNo>@example.edu`  
-e.g. `22BCS045@example.edu`
-
-```regex
-/^(\d{2})([a-z]{2,4})(\d{3,})@example\.edu$/i
+```bash
+git clone https://github.com/your-org/comflex.git
+cd comflex
 ```
 
-| Group | Extracts           |
-|-------|--------------------|
-| 1     | 2-digit year       |
-| 2     | Department code    |
-| 3     | Roll number        |
+### 2. MongoDB Setup
 
-### Admin Setup
+Comflex requires MongoDB with **replica set** enabled (required for Prisma transactions).
 
-The Comflex admin panel (Setup Wizard → Step 2) lets you configure the email parsing regex from the UI. Enter your pattern, capture group index, and year offset to auto-tag students into cohort groups on registration.
+<details>
+<summary><strong>🐧 Linux</strong></summary>
+
+```bash
+# Install MongoDB Community Edition
+# (Ubuntu/Debian — see https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/)
+sudo apt-get install -y gnupg curl
+curl -fsSL https://www.mongodb.com/static/pgp/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+sudo apt-get update && sudo apt-get install -y mongodb-org
+
+# Enable replica set: add to /etc/mongod.conf
+# replication:
+#   replSetName: rs0
+
+# Restart and initialize
+sudo systemctl restart mongod
+mongosh --eval "rs.initiate()"
+```
+</details>
+
+<details>
+<summary><strong>🍎 macOS</strong></summary>
+
+```bash
+# Install via Homebrew
+brew tap mongodb/brew
+brew install mongodb-community@7.0
+
+# Start with replica set
+mongod --replSet rs0 --dbpath /usr/local/var/mongodb --logpath /usr/local/var/log/mongodb/mongo.log --fork
+
+# Initialize the replica set
+mongosh --eval "rs.initiate()"
+```
+</details>
+
+<details>
+<summary><strong>🪟 Windows</strong></summary>
+
+1. Download MongoDB Community from [mongodb.com](https://www.mongodb.com/try/download/community)
+2. During install, choose "Complete" and install MongoDB Compass
+3. Edit `C:\Program Files\MongoDB\Server\7.0\bin\mongod.cfg`:
+   ```yaml
+   replication:
+     replSetName: rs0
+   ```
+4. Restart the MongoDB service from Services panel
+5. Open MongoDB Shell (mongosh) and run: `rs.initiate()`
+</details>
+
+### 3. Backend Setup
+
+```bash
+cd backend
+
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.example .env
+# Edit .env and fill in your values (see Environment Variables below)
+
+# Generate Prisma client
+npx prisma generate
+
+# Push schema to database
+npx prisma db push
+
+# Start development server
+npm run dev
+```
+
+### 4. Frontend Setup
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.example .env
+# Add your VITE_GOOGLE_CLIENT_ID
+
+# Start development server
+npm run dev
+```
+
+### 5. Google OAuth Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create a new project (or select existing)
+3. Navigate to **APIs & Services → Credentials**
+4. Click **Create Credentials → OAuth 2.0 Client ID**
+5. Set Application type: **Web application**
+6. Add Authorized origins:
+   - `http://localhost:5173` (frontend dev)
+   - `http://localhost:5000` (backend dev)
+7. Copy the **Client ID** to:
+   - `backend/.env` → `GOOGLE_CLIENT_ID`
+   - `frontend/.env` → `VITE_GOOGLE_CLIENT_ID`
+
+### 6. First Boot
+
+1. Start both backend (`npm run dev` in `/backend`) and frontend (`npm run dev` in `/frontend`)
+2. Open `http://localhost:5173/login`
+3. Login with the seed admin credentials from `.env` (`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`)
+4. Navigate to `/setup` to configure your institution (name, email domain)
+5. Go to `/admin` to configure email parsing rules and cohort settings
+6. Once configured, registration is enabled for students
+
+---
+
+## Environment Variables
+
+### Backend (`backend/.env`)
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | MongoDB connection string with `?replicaSet=rs0` | ✅ |
+| `JWT_ACCESS_SECRET` | Secret for signing access tokens | ✅ |
+| `JWT_REFRESH_SECRET` | Secret for signing refresh tokens | ✅ |
+| `SEED_ADMIN_EMAIL` | Initial admin email (created on first boot) | ✅ |
+| `SEED_ADMIN_PASSWORD` | Initial admin password | ✅ |
+| `FRONTEND_URL` | Frontend origin for CORS | ✅ |
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID | For registration |
+| `EMAIL_PROVIDER` | `console` (dev) or `smtp` | ❌ |
+| `EMAIL_FROM` | Sender email address | ❌ |
+| `SMTP_HOST/PORT/USER/PASS` | SMTP credentials | If `smtp` |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_GOOGLE_CLIENT_ID` | Same Google Client ID as backend |
+
+---
+
+## API Overview
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/v1/auth/google` | Google OAuth login/register |
+| `POST /api/v1/auth/login` | Email/password login |
+| `POST /api/v1/auth/set-password` | Set password (Google users) |
+| `POST /api/v1/auth/set-username` | Choose username |
+| `GET /api/v1/friends` | List friends |
+| `POST /api/v1/friends/request` | Send friend request |
+| `GET /api/v1/dm` | List DM conversations |
+| `POST /api/v1/dm/:userId` | Send a DM |
+| `GET /api/v1/admin/auto-join-rules` | Get auto-join rules |
+| `PUT /api/v1/admin/auto-join-rules` | Set auto-join rules |
+
+See `RULES.md` for the complete API contract and data model documentation.
+
+---
+
+## Architecture
+
+```
+comflex/
+├── backend/
+│   ├── prisma/schema.prisma     # Data models (MongoDB)
+│   ├── src/
+│   │   ├── config/env.js        # Environment config
+│   │   ├── middleware/           # Auth, RBAC, error handling
+│   │   ├── routes/              # REST API routes
+│   │   ├── services/            # Business logic
+│   │   └── utils/               # JWT, password, response helpers
+│   └── .env                     # Environment variables
+├── frontend/
+│   ├── src/
+│   │   ├── api/                 # API client modules
+│   │   ├── components/          # Reusable UI components
+│   │   ├── context/             # React context (Auth)
+│   │   ├── pages/               # Route pages
+│   │   └── App.jsx              # Root routing
+│   └── .env                     # Frontend env
+├── RULES.md                     # Design rules & API contracts
+├── doNext.md                    # Next-phase roadmap
+└── README.md                    # This file
+```
+
+## License
+
+MIT

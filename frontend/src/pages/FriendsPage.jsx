@@ -1,0 +1,226 @@
+/**
+ * FriendsPage — View friends, pending requests, and search for users.
+ */
+
+import { useState, useEffect, useCallback } from 'react';
+import { friendApi } from '../api/friendApi';
+import { userApi } from '../api/userApi';
+import Layout from '../components/Layout';
+
+export default function FriendsPage() {
+  const [tab, setTab] = useState('friends'); // 'friends' | 'requests' | 'sent' | 'search'
+  const [friends, setFriends] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [sent, setSent] = useState([]);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState('');
+  const [message, setMessage] = useState('');
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [friendsRes, requestsRes, sentRes] = await Promise.all([
+        friendApi.listFriends(),
+        friendApi.listRequests(),
+        friendApi.listSent(),
+      ]);
+      setFriends(friendsRes.data.data || []);
+      setRequests(requestsRes.data.data || []);
+      setSent(sentRes.data.data || []);
+    } catch (err) {
+      console.error('Failed to fetch friends data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    try {
+      // Use the admin user listing endpoint for now (search by name)
+      const res = await userApi.searchUsers(searchQuery);
+      setSearchResults(res.data.data?.users || res.data.data || []);
+    } catch {
+      setSearchResults([]);
+    }
+  };
+
+  const handleAction = async (action, id) => {
+    setActionLoading(id);
+    setMessage('');
+    try {
+      switch (action) {
+        case 'accept':
+          await friendApi.accept(id);
+          setMessage('Friend request accepted!');
+          break;
+        case 'reject':
+          await friendApi.reject(id);
+          setMessage('Friend request rejected.');
+          break;
+        case 'remove':
+          await friendApi.remove(id);
+          setMessage('Friend removed.');
+          break;
+        case 'send':
+          await friendApi.sendRequest(id);
+          setMessage('Friend request sent!');
+          break;
+      }
+      await fetchData();
+    } catch (err) {
+      setMessage(err.response?.data?.message || 'Action failed.');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const tabs = [
+    { key: 'friends', label: 'Friends', count: friends.length },
+    { key: 'requests', label: 'Requests', count: requests.length },
+    { key: 'sent', label: 'Sent', count: sent.length },
+    { key: 'search', label: 'Find People' },
+  ];
+
+  const UserCard = ({ user, actions }) => (
+    <div className="flex items-center justify-between p-4 rounded-xl bg-[var(--color-bg-secondary)] border border-[var(--color-border)]">
+      <div className="flex items-center gap-3">
+        {user.avatarUrl ? (
+          <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-white font-bold text-sm">
+            {user.displayName?.charAt(0)?.toUpperCase() || '?'}
+          </div>
+        )}
+        <div>
+          <p className="font-semibold text-sm">{user.displayName}</p>
+          {user.username && <p className="text-xs text-[var(--color-text-muted)]">@{user.username}</p>}
+        </div>
+      </div>
+      <div className="flex gap-2">
+        {actions}
+      </div>
+    </div>
+  );
+
+  return (
+    <Layout>
+      <div className="max-w-2xl mx-auto">
+        <h1 className="text-2xl font-bold mb-6">Friends</h1>
+
+        {message && (
+          <div className="mb-4 p-3 rounded-xl bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 text-sm text-[var(--color-accent-light)]">
+            {message}
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 p-1 bg-[var(--color-bg-secondary)] rounded-xl">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                tab === t.key
+                  ? 'bg-[var(--color-accent)] text-white'
+                  : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+              }`}
+            >
+              {t.label} {t.count !== undefined && `(${t.count})`}
+            </button>
+          ))}
+        </div>
+
+        {loading && <p className="text-center text-[var(--color-text-muted)] animate-pulse">Loading...</p>}
+
+        {/* Friends list */}
+        {tab === 'friends' && (
+          <div className="space-y-3">
+            {friends.length === 0 && !loading && (
+              <p className="text-center text-[var(--color-text-muted)] py-8">No friends yet. Search for people to connect!</p>
+            )}
+            {friends.map(f => (
+              <UserCard key={f.friendshipId} user={f} actions={
+                <>
+                  <a href={`/messages/${f.id}`} className="btn btn-primary text-xs py-1.5 px-3">Message</a>
+                  <button 
+                    onClick={() => handleAction('remove', f.friendshipId)} 
+                    className="btn btn-secondary text-xs py-1.5 px-3"
+                    disabled={actionLoading === f.friendshipId}
+                  >
+                    Unfriend
+                  </button>
+                </>
+              } />
+            ))}
+          </div>
+        )}
+
+        {/* Pending requests */}
+        {tab === 'requests' && (
+          <div className="space-y-3">
+            {requests.length === 0 && !loading && (
+              <p className="text-center text-[var(--color-text-muted)] py-8">No pending requests.</p>
+            )}
+            {requests.map(r => (
+              <UserCard key={r.friendshipId} user={r} actions={
+                <>
+                  <button onClick={() => handleAction('accept', r.friendshipId)} className="btn btn-primary text-xs py-1.5 px-3" disabled={actionLoading === r.friendshipId}>Accept</button>
+                  <button onClick={() => handleAction('reject', r.friendshipId)} className="btn btn-secondary text-xs py-1.5 px-3" disabled={actionLoading === r.friendshipId}>Reject</button>
+                </>
+              } />
+            ))}
+          </div>
+        )}
+
+        {/* Sent requests */}
+        {tab === 'sent' && (
+          <div className="space-y-3">
+            {sent.length === 0 && !loading && (
+              <p className="text-center text-[var(--color-text-muted)] py-8">No sent requests.</p>
+            )}
+            {sent.map(s => (
+              <UserCard key={s.friendshipId} user={s} actions={
+                <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-card)] px-3 py-1.5 rounded-lg">Pending</span>
+              } />
+            ))}
+          </div>
+        )}
+
+        {/* Search */}
+        {tab === 'search' && (
+          <div>
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                className="input flex-1"
+                placeholder="Search by name or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              />
+              <button onClick={handleSearch} className="btn btn-primary px-4">Search</button>
+            </div>
+            <div className="space-y-3">
+              {searchResults.map(u => (
+                <UserCard key={u.id} user={u} actions={
+                  <button 
+                    onClick={() => handleAction('send', u.id)} 
+                    className="btn btn-primary text-xs py-1.5 px-3"
+                    disabled={actionLoading === u.id}
+                  >
+                    Add Friend
+                  </button>
+                } />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+}

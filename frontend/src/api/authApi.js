@@ -11,6 +11,18 @@ export const authApi = {
   register: (email, password, displayName) =>
     client.post('/auth/register', { email, password, displayName }),
 
+  googleLogin: (idToken) =>
+    client.post('/auth/google', { idToken }),
+
+  setPassword: (newPassword) =>
+    client.post('/auth/set-password', { newPassword }),
+
+  setUsername: (username) =>
+    client.post('/auth/set-username', { username }),
+
+  checkUsername: (username) =>
+    client.get(`/auth/check-username/${encodeURIComponent(username)}`),
+
   logout: () =>
     client.post('/auth/logout'),
 
@@ -22,4 +34,7 @@ export const authApi = {
 
   resetPassword: (token, newPassword) =>
     client.post('/auth/reset-password', { token, newPassword }),
+
+  verifyPersonalEmail: (token) =>
+    client.post('/auth/verify-personal-email', { token }),
 };

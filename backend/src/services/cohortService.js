@@ -4,7 +4,8 @@
  * Implements admin-controlled email-based auto-tagging.
  * The Admin configures regex patterns via the dashboard;
  * this service applies those patterns to extract cohort years
- * and assign users to groups.
+ * AND branches, then assigns users to groups.
+ * Also applies auto-join rules configured by the admin.
  * 
  * See RULES.md §5 for the full tagging specification.
  */
@@ -13,7 +14,7 @@ const prisma = require('../prisma');
 
 /**
  * Parse a user's email using the admin-configured parsing rules
- * and assign them to the appropriate cohort groups.
+ * and assign them to the appropriate cohort groups + auto-join groups.
  * 
  * @param {string} userId - The user's database ID
  * @param {string} email - The user's email address
@@ -34,7 +35,7 @@ async function assignCohortTags(userId, email) {
   // Apply the regex pattern to extract the year identifier
   let regex;
   try {
-    regex = new RegExp(rules.pattern);
+    regex = new RegExp(rules.pattern, 'i');
   } catch (err) {
     console.error('[COHORT] Invalid regex pattern in config:', rules.pattern, err.message);
     return [];
@@ -54,6 +55,15 @@ async function assignCohortTags(userId, email) {
     return [];
   }
 
+  // Extract branch if configured
+  let branch = null;
+  let branchLabel = null;
+  if (rules.branchCaptureGroup !== undefined && match[rules.branchCaptureGroup]) {
+    branch = match[rules.branchCaptureGroup].toLowerCase();
+    branchLabel = rules.branchMapping?.[branch] || branch;
+    console.log(`[COHORT] Extracted branch: ${branch} → ${branchLabel}`);
+  }
+
   // Determine the group names
   const primaryName = `cohort-${year}`;
   const seniorYear = year + cohortConfig.seniorOffset; // e.g., 27 for year 28
@@ -65,8 +75,13 @@ async function assignCohortTags(userId, email) {
 
   const tags = [primaryName, crossSeniorName, crossJuniorName];
 
+  // Add branch tag if extracted
+  if (branch) {
+    tags.push(`branch-${branch}`);
+  }
+
   // Create groups if they don't exist and add the user as a member
-  for (const tagName of tags) {
+  for (const tagName of [primaryName, crossSeniorName, crossJuniorName]) {
     // Determine group type
     const isPrimary = tagName === primaryName;
     const type = isPrimary ? 'primary' : 'cross-year';
@@ -91,15 +106,10 @@ async function assignCohortTags(userId, email) {
     // - Cross-year where user is the JUNIOR cohort → Ring 3 (member)
     let groupRing = 3;
     if (!isPrimary && cohortConfig.seniorAutoElevate) {
-      // The user is "senior" in a cross-year group if the OTHER year is higher
-      // e.g., for cohort-27-28: year 27 is senior, year 28 is junior
-      // For crossSeniorName (e.g. cohort-27-28), our year is 28, the senior is 27
-      // For crossJuniorName (e.g. cohort-28-29), our year is 28, the junior is 29
       if (tagName === crossJuniorName) {
         // We are the senior in the junior cross-year group
         groupRing = 2;
       }
-      // crossSeniorName → we are the junior, remain Ring 3
     }
 
     // Default permissions for Ring 2 (elevated/seniors)
@@ -149,6 +159,56 @@ async function assignCohortTags(userId, email) {
           permissions: defaultPermissions,
         },
       });
+    }
+  }
+
+  // ── Auto-Join Rules ──
+  // Apply admin-configured auto-join rules based on year and/or branch
+  const autoJoinRules = config.autoJoinRules || [];
+  for (const rule of autoJoinRules) {
+    let matches = false;
+    if (rule.matchField === 'year') {
+      matches = rule.matchValue === String(year);
+    } else if (rule.matchField === 'branch' && branch) {
+      matches = rule.matchValue.toLowerCase() === branch;
+    } else if (rule.matchField === 'both' && branch) {
+      matches = rule.matchValue === `${year}-${branch}`;
+    }
+
+    if (matches && rule.groupId) {
+      const group = await prisma.cohortGroup.findUnique({ where: { id: rule.groupId } });
+      if (group) {
+        const existingMembership = await prisma.groupMember.findUnique({
+          where: { userId_groupId: { userId, groupId: group.id } },
+        });
+        if (!existingMembership) {
+          await prisma.groupMember.create({
+            data: {
+              userId,
+              groupId: group.id,
+              ring: 3, // default member ring for auto-join
+              permissions: {
+                can_send_messages: true,
+                can_delete_own_messages: true,
+                can_delete_others_messages: false,
+                can_mute_members: false,
+                can_kick_members: false,
+                can_add_members: false,
+                can_tag_members: true,
+                can_manage_economy: false,
+                can_create_events: false,
+                can_pin_messages: false,
+                can_manage_roles: false,
+                can_edit_group_info: false,
+                can_stop_others_tagging: false,
+              },
+            },
+          });
+          if (!tags.includes(group.name)) {
+            tags.push(group.name);
+          }
+        }
+      }
     }
   }
 

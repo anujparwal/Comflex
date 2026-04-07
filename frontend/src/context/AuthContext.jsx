@@ -1,8 +1,8 @@
 /**
  * Auth Context — Global authentication state provider.
  * 
- * Provides: user, token, isAuthenticated, isAdmin, login, logout, register.
- * Wraps the entire app so any component can access auth state.
+ * Provides: user, token, isAuthenticated, isAdmin, login, logout,
+ * register, googleLogin, setPassword, setUsername.
  */
 
 import { createContext, useState, useEffect, useCallback } from 'react';
@@ -61,6 +61,31 @@ export function AuthProvider({ children }) {
     return userData;
   }, []);
 
+  const googleLogin = useCallback(async (idToken) => {
+    const res = await authApi.googleLogin(idToken);
+    const { accessToken, refreshToken, user: userData, needsPassword, needsUsername } = res.data.data;
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+    setUser(userData);
+    return { user: userData, needsPassword, needsUsername };
+  }, []);
+
+  const setPasswordFn = useCallback(async (newPassword) => {
+    const res = await authApi.setPassword(newPassword);
+    // Refresh the user profile to get updated hasPassword
+    const profileRes = await userApi.getProfile();
+    setUser(profileRes.data.data);
+    return res.data.data;
+  }, []);
+
+  const setUsernameFn = useCallback(async (username) => {
+    const res = await authApi.setUsername(username);
+    // Refresh profile
+    const profileRes = await userApi.getProfile();
+    setUser(profileRes.data.data);
+    return res.data.data;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -84,6 +109,9 @@ export function AuthProvider({ children }) {
     isManager: user?.globalRing <= 1,
     login,
     register,
+    googleLogin,
+    setPassword: setPasswordFn,
+    setUsername: setUsernameFn,
     logout,
     refreshProfile,
   };

@@ -4,9 +4,13 @@
  * Routes:
  *   /login          → LoginPage (public)
  *   /register       → RegisterPage (public, gated by system config)
+ *   /set-password   → SetPasswordPage (authenticated, post-Google flow)
  *   /setup          → SetupPage (admin only, first boot)
  *   /profile        → ProfilePage (authenticated)
  *   /admin          → AdminDashboard (Ring 0 only)
+ *   /groups         → GroupsPage (authenticated)
+ *   /friends        → FriendsPage (authenticated)
+ *   /messages       → MessagesPage (authenticated)
  *   /               → Redirects to /profile or /login
  */
 
@@ -22,6 +26,9 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import GroupsPage from './pages/GroupsPage';
 import ChatPage from './pages/ChatPage';
+import SetPasswordPage from './pages/SetPasswordPage';
+import FriendsPage from './pages/FriendsPage';
+import MessagesPage from './pages/MessagesPage';
 
 export default function App() {
   return (
@@ -33,6 +40,13 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+          {/* Post-Google registration setup */}
+          <Route path="/set-password" element={
+            <ProtectedRoute>
+              <SetPasswordPage />
+            </ProtectedRoute>
+          } />
 
           {/* Admin setup (first boot) */}
           <Route path="/setup" element={
@@ -64,6 +78,25 @@ export default function App() {
           <Route path="/groups/:id" element={
             <ProtectedRoute>
               <ChatPage />
+            </ProtectedRoute>
+          } />
+
+          {/* Friends */}
+          <Route path="/friends" element={
+            <ProtectedRoute>
+              <FriendsPage />
+            </ProtectedRoute>
+          } />
+
+          {/* Messages (DMs) */}
+          <Route path="/messages" element={
+            <ProtectedRoute>
+              <MessagesPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/messages/:userId" element={
+            <ProtectedRoute>
+              <MessagesPage />
             </ProtectedRoute>
           } />
 

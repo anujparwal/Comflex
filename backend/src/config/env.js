@@ -30,6 +30,23 @@ const env = {
 
   // CORS
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
+
+  // Google OAuth
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+
+  // Email Service — provider can be: "smtp" | "console"
+  // "console" logs emails to terminal (default for development)
+  EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || 'console',
+  EMAIL_FROM: process.env.EMAIL_FROM || 'noreply@comflex.dev',
+
+  // SMTP config (only used when EMAIL_PROVIDER=smtp)
+  SMTP_HOST: process.env.SMTP_HOST || '',
+  SMTP_PORT: parseInt(process.env.SMTP_PORT, 10) || 587,
+  SMTP_USER: process.env.SMTP_USER || '',
+  SMTP_PASS: process.env.SMTP_PASS || '',
+
+  // Email API key (for future providers like Resend/SendGrid)
+  EMAIL_API_KEY: process.env.EMAIL_API_KEY || '',
 };
 
 module.exports = env;
