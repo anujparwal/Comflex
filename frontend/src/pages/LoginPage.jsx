@@ -1,16 +1,20 @@
 /**
- * LoginPage — Email/password login form.
+ * LoginPage — Email/password + Google OAuth login form.
  * 
  * States: form → loading → success redirect / error message.
  * Redirects to /setup if system is not configured.
  */
 
-import { useState } from 'react';
+import { useState, useContext } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
+import { AuthContext } from '../context/AuthContext';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 export default function LoginPage() {
-  const { login, isAuthenticated, systemStatus, loading: authLoading } = useAuth();
+  const { login, googleLogin, isAuthenticated, systemStatus, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -32,8 +36,25 @@ export default function LoginPage() {
       await login(email, password);
       navigate('/profile');
     } catch (err) {
-      const msg = err.response?.data?.error?.message || 'Login failed. Please try again.';
+      const msg = err.response?.data?.error?.message || err.response?.data?.message || 'Login failed. Please try again.';
       setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError('');
+    setLoading(true);
+    try {
+      const result = await googleLogin(credentialResponse.credential);
+      if (result.needsPassword || result.needsUsername) {
+        navigate('/set-password');
+      } else {
+        navigate('/profile');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Google login failed.');
     } finally {
       setLoading(false);
     }
@@ -57,6 +78,32 @@ export default function LoginPage() {
           {error && (
             <div className="bg-[var(--color-danger)] bg-opacity-10 border border-[var(--color-danger)] border-opacity-30 text-[var(--color-danger)] rounded-xl p-3 mb-4 text-sm">
               {error}
+            </div>
+          )}
+
+          {/* Google Login */}
+          {GOOGLE_CLIENT_ID && (
+            <div className="mb-6">
+              <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+                <div className="flex justify-center">
+                  <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={() => setError('Google login failed.')}
+                    useOneTap={false}
+                    text="signin_with"
+                    shape="pill"
+                    size="large"
+                    width={300}
+                    theme="filled_blue"
+                  />
+                </div>
+              </GoogleOAuthProvider>
+
+              <div className="flex items-center gap-3 my-6">
+                <div className="flex-1 h-px bg-[var(--color-border)]" />
+                <span className="text-xs text-[var(--color-text-muted)] uppercase">or sign in with email</span>
+                <div className="flex-1 h-px bg-[var(--color-border)]" />
+              </div>
             </div>
           )}
 

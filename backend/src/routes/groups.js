@@ -49,19 +49,28 @@ router.get('/:id', requireGroupMember, async (req, res, next) => {
 });
 
 /**
- * POST /api/v1/groups — Create a new group (Admin/Manager only).
+ * POST /api/v1/groups — Create a new group.
+ * Allowed for: Ring ≤ 1 (Admin/Manager) OR user with canCreateGroups flag.
  */
 router.post(
   '/',
-  requireRing(1),
   [
     body('name').trim().notEmpty().withMessage('Group name is required.'),
     body('displayName').optional().trim(),
     body('description').optional().trim(),
-    body('type').optional().isIn(['primary', 'cross-year']),
+    body('type').optional().isIn(['primary', 'cross-year', 'custom']),
   ],
   async (req, res, next) => {
     try {
+      // Check permission: Ring ≤ 1 OR canCreateGroups
+      if (req.user.globalRing > 1) {
+        const prisma = require('../prisma');
+        const fullUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+        if (!fullUser?.canCreateGroups) {
+          return error(res, 'INSUFFICIENT_RING', 'You do not have permission to create groups.', 403);
+        }
+      }
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400,

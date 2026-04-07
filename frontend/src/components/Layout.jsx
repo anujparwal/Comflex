@@ -28,6 +28,8 @@ export default function Layout({ children }) {
   const navItems = [
     { path: '/profile', label: 'Profile', icon: '👤' },
     { path: '/groups', label: 'Groups', icon: '💬' },
+    { path: '/friends', label: 'Friends', icon: '👥' },
+    { path: '/messages', label: 'Messages', icon: '✉️' },
     ...(isAdmin ? [{ path: '/admin', label: 'Admin Dashboard', icon: '⚙️' }] : []),
   ];
 

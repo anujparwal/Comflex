@@ -2,7 +2,7 @@
  * Comflex Backend — Express + Socket.IO Server Entry Point
  *
  * Initializes Express, registers middleware/routes, seeds admin,
- * initializes Socket.IO for real-time chat, and starts listening.
+ * initializes Socket.IO for real-time chat + DMs, and starts listening.
  */
 
 const http = require('http');
@@ -21,6 +21,8 @@ const userRoutes = require('./routes/users');
 const adminRoutes = require('./routes/admin');
 const systemRoutes = require('./routes/system');
 const groupRoutes = require('./routes/groups');
+const friendRoutes = require('./routes/friends');
+const dmRoutes = require('./routes/dm');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -54,6 +56,8 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/system', systemRoutes);
 app.use('/api/v1/groups', groupRoutes);
+app.use('/api/v1/friends', friendRoutes);
+app.use('/api/v1/dm', dmRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -75,14 +79,15 @@ async function startServer() {
     // Seed the admin user on first boot (idempotent)
     await seedAdmin();
 
-    // Initialize Socket.IO for real-time chat
+    // Initialize Socket.IO for real-time chat + DMs
     initSocket(httpServer, env.FRONTEND_URL);
 
     httpServer.listen(env.PORT, () => {
       console.log(`\n🚀 Comflex Backend running on http://localhost:${env.PORT}`);
       console.log(`   Environment: ${env.NODE_ENV}`);
       console.log(`   Frontend URL: ${env.FRONTEND_URL}`);
-      console.log(`   WebSocket: enabled\n`);
+      console.log(`   WebSocket: enabled`);
+      console.log(`   Email: ${env.EMAIL_PROVIDER} mode\n`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);

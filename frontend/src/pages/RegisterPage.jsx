@@ -1,131 +1,103 @@
 /**
- * RegisterPage — New user registration form.
- * 
- * Shows "System not configured" message if institution setup is pending.
- * On success, auto-logs in and redirects to profile.
+ * RegisterPage — Google-only registration flow.
+ * Users click "Continue with Google" using their college email.
+ * After successful Google auth, they're redirected to set password + username.
  */
 
-import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useState, useContext } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { GoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
+import { AuthContext } from '../context/AuthContext';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 export default function RegisterPage() {
-  const { register, isAuthenticated, systemStatus, loading: authLoading } = useAuth();
+  const { googleLogin, systemStatus } = useContext(AuthContext);
   const navigate = useNavigate();
-
-  const [form, setForm] = useState({ email: '', password: '', confirmPassword: '', displayName: '' });
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Redirect if already logged in
-  if (!authLoading && isAuthenticated) {
-    return <Navigate to="/profile" replace />;
-  }
-
-  // Registration gate: system must be configured
-  if (!authLoading && systemStatus && !systemStatus.isConfigured) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="glass-card p-8 text-center max-w-md fade-in">
-          <div className="text-5xl mb-4">🚧</div>
-          <h2 className="text-xl font-bold mb-2">Registration Not Available</h2>
-          <p className="text-[var(--color-text-secondary)] mb-4">
-            The platform hasn&apos;t been configured yet. Please contact your administrator.
-          </p>
-          <Link to="/login" className="text-[var(--color-accent-light)] hover:underline text-sm">
-            ← Back to Login
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleGoogleSuccess = async (credentialResponse) => {
     setError('');
-
-    if (form.password !== form.confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-    if (form.password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-
     setLoading(true);
+
     try {
-      await register(form.email, form.password, form.displayName);
-      navigate('/profile');
+      const result = await googleLogin(credentialResponse.credential);
+      if (result.needsPassword || result.needsUsername) {
+        navigate('/set-password');
+      } else {
+        navigate('/profile');
+      }
     } catch (err) {
-      const msg = err.response?.data?.error?.message || 'Registration failed. Please try again.';
+      const msg = err.response?.data?.message || 'Registration failed. Make sure you use your college email.';
       setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
+  // Gated: registration requires the platform to be configured
+  if (systemStatus && !systemStatus.isConfigured) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="card p-8 max-w-md w-full text-center">
+          <h2 className="text-2xl font-bold mb-4">Not Available Yet</h2>
+          <p className="text-[var(--color-text-secondary)]">
+            The platform hasn't been configured by an admin yet. Registration will open once setup is complete.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-md fade-in">
+      <div className="card p-8 max-w-md w-full">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold gradient-text mb-2">Comflex</h1>
-          <p className="text-[var(--color-text-secondary)]">Create your account</p>
+          <h1 className="text-3xl font-bold gradient-text mb-2">Join Comflex</h1>
+          <p className="text-[var(--color-text-secondary)]">
+            Sign up with your college Google account
+          </p>
         </div>
 
-        <div className="glass-card p-8">
-          <h2 className="text-xl font-bold mb-6">Register</h2>
+        {error && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
 
-          {error && (
-            <div className="bg-[var(--color-danger)] bg-opacity-10 border border-[var(--color-danger)] border-opacity-30 text-[var(--color-danger)] rounded-xl p-3 mb-4 text-sm">
-              {error}
+        <div className="flex flex-col items-center gap-6">
+          {GOOGLE_CLIENT_ID ? (
+            <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError('Google login failed. Please try again.')}
+                useOneTap={false}
+                text="signup_with"
+                shape="pill"
+                size="large"
+                width={300}
+                theme="filled_blue"
+              />
+            </GoogleOAuthProvider>
+          ) : (
+            <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm text-center">
+              Google OAuth is not configured. Set <code>VITE_GOOGLE_CLIENT_ID</code> in the frontend <code>.env</code>.
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="reg-name" className="block text-sm text-[var(--color-text-secondary)] mb-1.5">
-                Display Name
-              </label>
-              <input id="reg-name" name="displayName" type="text" value={form.displayName} onChange={handleChange}
-                placeholder="John Doe" required minLength={2} maxLength={50} autoFocus />
+          {loading && (
+            <div className="text-[var(--color-text-secondary)] text-sm animate-pulse">
+              Setting up your account...
             </div>
+          )}
+        </div>
 
-            <div>
-              <label htmlFor="reg-email" className="block text-sm text-[var(--color-text-secondary)] mb-1.5">
-                Institutional Email
-              </label>
-              <input id="reg-email" name="email" type="email" value={form.email} onChange={handleChange}
-                placeholder="28bcs045@institution.edu" required />
-            </div>
-
-            <div>
-              <label htmlFor="reg-pwd" className="block text-sm text-[var(--color-text-secondary)] mb-1.5">
-                Password
-              </label>
-              <input id="reg-pwd" name="password" type="password" value={form.password} onChange={handleChange}
-                placeholder="Min 8 characters" required minLength={8} />
-            </div>
-
-            <div>
-              <label htmlFor="reg-confirm" className="block text-sm text-[var(--color-text-secondary)] mb-1.5">
-                Confirm Password
-              </label>
-              <input id="reg-confirm" name="confirmPassword" type="password" value={form.confirmPassword} onChange={handleChange}
-                placeholder="Re-enter password" required />
-            </div>
-
-            <button type="submit" disabled={loading} className="btn btn-primary w-full mt-2">
-              {loading ? <span className="spinner" /> : 'Create Account'}
-            </button>
-          </form>
-
-          <p className="text-center text-sm text-[var(--color-text-muted)] mt-6">
-            Already have an account?{' '}
-            <Link to="/login" className="text-[var(--color-accent-light)] hover:underline">Sign In</Link>
-          </p>
+        <div className="mt-8 text-center text-sm text-[var(--color-text-muted)]">
+          Already have an account?{' '}
+          <Link to="/login" className="text-[var(--color-accent-light)] hover:underline">
+            Login here
+          </Link>
         </div>
       </div>
     </div>

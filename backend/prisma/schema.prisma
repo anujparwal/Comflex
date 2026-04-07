@@ -17,19 +17,36 @@ datasource db {
 model User {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   email          String   @unique
-  password       String   // bcrypt hashed
+  username       String?  @unique   // chosen during registration
+  password       String             // bcrypt hashed (empty string for Google-only until set)
   displayName    String
   avatarUrl      String?
   bio            String?  @default("")
   globalRing     Int      @default(3) // 0=Admin, 1=Manager, 2=Elevated, 3=Member, 4+=Restricted
-  cohortTags     String[] // e.g. ["cohort-28", "cohort-28-27"]
+  cohortTags     String[] // e.g. ["cohort-28", "cohort-28-27", "branch-cs"]
   cfHandle       String?
   cfRating       Int?
   creditBalance  Int      @default(0)
   displayBadges  String[] // badge IDs currently displayed (max 5)
+
+  // Google OAuth fields
+  googleId              String?  @unique  // Google OAuth sub ID
+  hasPassword           Boolean  @default(true) // false for Google-only accounts until password set
+
+  // Personal email verification
+  personalEmail         String?            // secondary/personal email
+  personalEmailVerified Boolean  @default(false)
+  emailVerifyToken      String?
+  emailVerifyExpiry     DateTime?
+
+  // Admin-delegated permissions
+  canCreateGroups       Boolean  @default(false)
+
+  // Session & security tokens
   refreshToken     String?  // hashed refresh token
   resetToken       String?  // password reset token (hashed)
   resetTokenExpiry DateTime? // expiry for the reset token
+
   createdAt        DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -48,23 +65,24 @@ model InstitutionConfig {
   domain            String   @default("")
   logoUrl           String?
   isConfigured      Boolean  @default(false) // Gates user registration
-  emailParsingRules Json?    // { pattern: string, captureGroup: number, yearOffset: number }
+  emailParsingRules Json?    // { pattern, captureGroup, branchCaptureGroup?, branchMapping?, yearOffset }
   cohortConfig      Json?    // { seniorOffset: -1, juniorOffset: +1, seniorAutoElevate: true }
+  autoJoinRules     Json?    // [{ matchField: "year"|"branch"|"both", matchValue: "28", groupId: "..." }]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
 
 // ============================================================
-// COHORT GROUP — A group (primary cohort or cross-year)
-// Created automatically when users are tagged
+// COHORT GROUP — A group (primary cohort, cross-year, or custom)
+// Created automatically when users are tagged, or manually by admin
 // ============================================================
 model CohortGroup {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  name        String   @unique // e.g. "cohort-28", "cohort-28-27"
+  name        String   @unique // e.g. "cohort-28", "cohort-28-27", "study-group-ds"
   displayName String?          // e.g. "Class of 2028", "2028-2027 Cross-Year"
   description String?          // group description
   avatarUrl   String?          // group avatar image
-  type        String           // "primary" | "cross-year"
+  type        String           // "primary" | "cross-year" | "custom"
   createdAt   DateTime @default(now())
 
   // Relations
@@ -95,7 +113,7 @@ model GroupMember {
 }
 
 // ============================================================
-// MESSAGE — Chat message in a group (Phase 2 but schema added now)
+// MESSAGE — Chat message in a group
 // ============================================================
 model Message {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
@@ -129,4 +147,32 @@ model MuteRecord {
   group CohortGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@unique([userId, groupId])
+}
+
+// ============================================================
+// FRIENDSHIP — Friend requests and connections between users
+// ============================================================
+model Friendship {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  requesterId String  @db.ObjectId
+  addresseeId String  @db.ObjectId
+  status      String  @default("pending") // "pending" | "accepted" | "blocked"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([requesterId, addresseeId])
+}
+
+// ============================================================
+// DIRECT MESSAGE — 1-on-1 messages between friends
+// ============================================================
+model DirectMessage {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  senderId   String   @db.ObjectId
+  receiverId String   @db.ObjectId
+  content    String
+  isRead     Boolean  @default(false)
+  isDeleted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  editedAt   DateTime?
 }

@@ -1,7 +1,8 @@
 /**
  * Auth Service
  * 
- * Business logic for authentication: register, login, refresh token.
+ * Business logic for authentication: register, login, refresh token,
+ * Google OAuth login, password management, username, email verification.
  * Registration is gated — only allowed after the Seed Admin configures
  * the institution (isConfigured === true).
  */
@@ -11,9 +12,12 @@ const crypto = require('crypto');
 const { hashPassword, comparePassword } = require('../utils/password');
 const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 const { assignCohortTags } = require('./cohortService');
+const { verifyGoogleToken } = require('./googleAuthService');
+const { sendPasswordReset, sendEmailVerification } = require('./emailService');
+const env = require('../config/env');
 
 /**
- * Register a new user.
+ * Register a new user (email/password — legacy, kept for admin accounts).
  * 1. Check institution is configured (registration gate)
  * 2. Check email is not already taken
  * 3. Hash password, create user
@@ -41,6 +45,7 @@ async function register(email, password, displayName) {
       password: hashedPw,
       displayName,
       globalRing: 3, // Default: Member
+      hasPassword: true,
       cohortTags: [],
       displayBadges: [],
     },
@@ -70,6 +75,147 @@ async function register(email, password, displayName) {
 }
 
 /**
+ * Google OAuth Login/Register.
+ * 1. Verify the Google ID token
+ * 2. Find existing user by googleId or email
+ * 3. If new user → create account (no password yet)
+ * 4. Auto-assign cohort tags
+ * 5. Return JWT pair + needsPassword + needsUsername flags
+ */
+async function googleLogin(idToken) {
+  // Gate: institution must be configured
+  const config = await prisma.institutionConfig.findFirst();
+  if (!config || !config.isConfigured) {
+    throw Object.assign(new Error('Registration is disabled. The platform has not been configured yet.'), { statusCode: 403, code: 'REGISTRATION_DISABLED' });
+  }
+
+  // Verify the Google token and get user info
+  const googleUser = await verifyGoogleToken(idToken);
+
+  // Look up user by googleId first, then by email
+  let user = await prisma.user.findUnique({ where: { googleId: googleUser.googleId } });
+  let isNewUser = false;
+
+  if (!user) {
+    // Check if an account with this email already exists (password-based)
+    user = await prisma.user.findUnique({ where: { email: googleUser.email } });
+
+    if (user) {
+      // Link the existing account to Google
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { googleId: googleUser.googleId },
+      });
+    } else {
+      // Create brand new user — no password yet
+      isNewUser = true;
+      user = await prisma.user.create({
+        data: {
+          email: googleUser.email,
+          password: '', // No password — Google-only for now
+          displayName: googleUser.name,
+          avatarUrl: googleUser.picture,
+          googleId: googleUser.googleId,
+          hasPassword: false,
+          globalRing: 3,
+          cohortTags: [],
+          displayBadges: [],
+        },
+      });
+
+      // Auto-assign cohort tags
+      await assignCohortTags(user.id, user.email);
+      user = await prisma.user.findUnique({ where: { id: user.id } });
+    }
+  }
+
+  // Generate tokens
+  const accessToken = signAccessToken(user);
+  const refreshToken = signRefreshToken(user.id);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { refreshToken },
+  });
+
+  return {
+    accessToken,
+    refreshToken,
+    user: sanitizeUser(user),
+    needsPassword: !user.hasPassword,
+    needsUsername: !user.username,
+    isNewUser,
+  };
+}
+
+/**
+ * Set password for a Google-only user (hasPassword === false).
+ */
+async function setPassword(userId, newPassword) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw Object.assign(new Error('User not found.'), { statusCode: 404, code: 'USER_NOT_FOUND' });
+  }
+
+  const hashedPw = await hashPassword(newPassword);
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      password: hashedPw,
+      hasPassword: true,
+    },
+  });
+
+  return { message: 'Password has been set successfully.' };
+}
+
+/**
+ * Set a username for the user. Must be unique, 3-30 chars, alphanumeric + underscores.
+ */
+async function setUsername(userId, username) {
+  // Validate username format
+  if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+    throw Object.assign(
+      new Error('Username must be 3–30 characters, containing only letters, numbers, and underscores.'),
+      { statusCode: 400, code: 'INVALID_USERNAME' }
+    );
+  }
+
+  // Check uniqueness (case-insensitive)
+  const existing = await prisma.user.findFirst({
+    where: { username: { equals: username, mode: 'insensitive' } },
+  });
+  if (existing && existing.id !== userId) {
+    throw Object.assign(
+      new Error('This username is already taken.'),
+      { statusCode: 409, code: 'USERNAME_TAKEN' }
+    );
+  }
+
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { username },
+  });
+
+  return { message: 'Username set successfully.', username: user.username };
+}
+
+/**
+ * Check if a username is available.
+ */
+async function checkUsername(username) {
+  if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+    return { available: false, reason: 'Invalid format. Use 3–30 alphanumeric characters or underscores.' };
+  }
+
+  const existing = await prisma.user.findFirst({
+    where: { username: { equals: username, mode: 'insensitive' } },
+  });
+
+  return { available: !existing };
+}
+
+/**
  * Login an existing user.
  * 1. Find user by email
  * 2. Compare password hash
@@ -79,6 +225,11 @@ async function login(email, password) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     throw Object.assign(new Error('Invalid email or password.'), { statusCode: 401, code: 'INVALID_CREDENTIALS' });
+  }
+
+  // If user has no password (Google-only), tell them to use Google
+  if (!user.hasPassword) {
+    throw Object.assign(new Error('This account uses Google login. Please sign in with Google.'), { statusCode: 401, code: 'GOOGLE_ONLY' });
   }
 
   const valid = await comparePassword(password, user.password);
@@ -134,8 +285,7 @@ async function logout(userId) {
 }
 
 /**
- * Forgot Password — generate a reset token and log it to console.
- * In production, this would send an email with the reset URL.
+ * Forgot Password — generate a reset token and send via email service.
  *
  * @param {string} email - The user's email address
  */
@@ -159,11 +309,13 @@ async function forgotPassword(email) {
     },
   });
 
-  // TODO: Replace with real email transport in production
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${rawToken}`;
-  console.log(`\n📧 [PASSWORD RESET] Token for ${email}:`);
-  console.log(`   URL: ${resetUrl}`);
-  console.log(`   Raw token: ${rawToken}\n`);
+  // Send via email service (console mode in dev, SMTP in prod)
+  const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${rawToken}`;
+  try {
+    await sendPasswordReset(email, resetUrl);
+  } catch (err) {
+    console.error('[AUTH] Failed to send password reset email:', err.message);
+  }
 
   return { message: 'If that email exists, a reset link has been sent.' };
 }
@@ -198,6 +350,7 @@ async function resetPassword(token, newPassword) {
     where: { id: user.id },
     data: {
       password: hashedPw,
+      hasPassword: true,
       resetToken: null,
       resetTokenExpiry: null,
       refreshToken: null, // Invalidate all sessions
@@ -208,11 +361,84 @@ async function resetPassword(token, newPassword) {
 }
 
 /**
+ * Send a verification email for the user's personal email.
+ */
+async function sendPersonalEmailVerification(userId, personalEmail) {
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      personalEmail,
+      personalEmailVerified: false,
+      emailVerifyToken: hashedToken,
+      emailVerifyExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    },
+  });
+
+  const verifyUrl = `${env.FRONTEND_URL}/verify-email?token=${rawToken}`;
+  try {
+    await sendEmailVerification(personalEmail, verifyUrl);
+  } catch (err) {
+    console.error('[AUTH] Failed to send email verification:', err.message);
+  }
+
+  return { message: 'Verification email sent.' };
+}
+
+/**
+ * Verify a personal email using the token.
+ */
+async function verifyPersonalEmail(token) {
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await prisma.user.findFirst({
+    where: {
+      emailVerifyToken: hashedToken,
+      emailVerifyExpiry: { gt: new Date() },
+    },
+  });
+
+  if (!user) {
+    throw Object.assign(
+      new Error('Invalid or expired verification token.'),
+      { statusCode: 400, code: 'INVALID_VERIFY_TOKEN' }
+    );
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      personalEmailVerified: true,
+      emailVerifyToken: null,
+      emailVerifyExpiry: null,
+    },
+  });
+
+  return { message: 'Personal email verified successfully.' };
+}
+
+/**
  * Strip sensitive fields before returning user data to the client.
  */
 function sanitizeUser(user) {
-  const { password, refreshToken, resetToken, resetTokenExpiry, ...safe } = user;
+  const { password, refreshToken, resetToken, resetTokenExpiry, emailVerifyToken, emailVerifyExpiry, ...safe } = user;
   return safe;
 }
 
-module.exports = { register, login, refreshAccessToken, logout, forgotPassword, resetPassword, sanitizeUser };
+module.exports = {
+  register,
+  login,
+  googleLogin,
+  setPassword,
+  setUsername,
+  checkUsername,
+  refreshAccessToken,
+  logout,
+  forgotPassword,
+  resetPassword,
+  sendPersonalEmailVerification,
+  verifyPersonalEmail,
+  sanitizeUser,
+};
