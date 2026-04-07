@@ -86,17 +86,25 @@ async function assignCohortTags(userId, email) {
     const isPrimary = tagName === primaryName;
     const type = isPrimary ? 'primary' : 'cross-year';
 
-    // Upsert the group
+    // Upsert the group (also fixes display names on existing groups)
+    const correctDisplayName = isPrimary 
+      ? `Class of ${year}` 
+      : `${tagName.split('-')[1]}-${tagName.split('-')[2]} Cross-Year`;
+
     let group = await prisma.cohortGroup.findUnique({ where: { name: tagName } });
     if (!group) {
       group = await prisma.cohortGroup.create({
         data: {
           name: tagName,
-          displayName: isPrimary 
-            ? `Class of 20${year}` 
-            : `20${tagName.split('-')[1]}-20${tagName.split('-')[2]} Cross-Year`,
+          displayName: correctDisplayName,
           type,
         },
+      });
+    } else if (group.displayName !== correctDisplayName) {
+      // Fix existing group display name if it's wrong
+      group = await prisma.cohortGroup.update({
+        where: { id: group.id },
+        data: { displayName: correctDisplayName },
       });
     }
 
@@ -168,11 +176,16 @@ async function assignCohortTags(userId, email) {
   for (const rule of autoJoinRules) {
     let matches = false;
     if (rule.matchField === 'year') {
-      matches = rule.matchValue === String(year);
+      const y2 = String(year % 100);
+      const y4 = String(year);
+      matches = rule.matchValue === y2 || rule.matchValue === y4;
     } else if (rule.matchField === 'branch' && branch) {
       matches = rule.matchValue.toLowerCase() === branch;
     } else if (rule.matchField === 'both' && branch) {
-      matches = rule.matchValue === `${year}-${branch}`;
+      const y2 = String(year % 100);
+      const y4 = String(year);
+      const mv = rule.matchValue.toLowerCase();
+      matches = mv === `${y2}-${branch}` || mv === `${y4}-${branch}`;
     }
 
     if (matches && rule.groupId) {

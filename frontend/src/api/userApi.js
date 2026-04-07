@@ -23,5 +23,8 @@ export const userApi = {
     client.get('/users/me/tags'),
 
   searchUsers: (query) =>
-    client.get(`/admin/users?search=${encodeURIComponent(query)}&limit=10`),
+    client.get(`/users/search?q=${encodeURIComponent(query)}`),
+
+  getUserProfile: (userId) =>
+    client.get(`/users/${userId}/profile`),
 };

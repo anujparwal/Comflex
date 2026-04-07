@@ -14,6 +14,7 @@ export default function FriendsPage() {
   const [sent, setSent] = useState([]);
   const [searchResults, setSearchResults] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState('');
   const [message, setMessage] = useState('');
@@ -38,16 +39,25 @@ export default function FriendsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    try {
-      // Use the admin user listing endpoint for now (search by name)
-      const res = await userApi.searchUsers(searchQuery);
-      setSearchResults(res.data.data?.users || res.data.data || []);
-    } catch {
+  // Live autocomplete search with debounce
+  useEffect(() => {
+    if (tab !== 'search' || searchQuery.trim().length < 2) {
       setSearchResults([]);
+      return;
     }
-  };
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await userApi.searchUsers(searchQuery);
+        setSearchResults(res.data.data || []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => { clearTimeout(timer); setSearching(false); };
+  }, [searchQuery, tab]);
 
   const handleAction = async (action, id) => {
     setActionLoading(id);
@@ -73,7 +83,7 @@ export default function FriendsPage() {
       }
       await fetchData();
     } catch (err) {
-      setMessage(err.response?.data?.message || 'Action failed.');
+      setMessage(err.response?.data?.error?.message || err.response?.data?.message || 'Action failed.');
     } finally {
       setActionLoading('');
     }
@@ -99,6 +109,7 @@ export default function FriendsPage() {
         <div>
           <p className="font-semibold text-sm">{user.displayName}</p>
           {user.username && <p className="text-xs text-[var(--color-text-muted)]">@{user.username}</p>}
+          {user.email && <p className="text-xs text-[var(--color-text-muted)]">{user.email}</p>}
         </div>
       </div>
       <div className="flex gap-2">
@@ -194,17 +205,24 @@ export default function FriendsPage() {
         {/* Search */}
         {tab === 'search' && (
           <div>
-            <div className="flex gap-2 mb-4">
+            <div className="relative mb-4">
               <input
                 type="text"
-                className="input flex-1"
-                placeholder="Search by name or email..."
+                className="input w-full"
+                placeholder="Search by username, email, or name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                autoFocus
               />
-              <button onClick={handleSearch} className="btn btn-primary px-4">Search</button>
+              {searching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <span className="spinner" style={{ width: 16, height: 16 }} />
+                </div>
+              )}
             </div>
+            {searchQuery.trim().length > 0 && searchQuery.trim().length < 2 && (
+              <p className="text-xs text-[var(--color-text-muted)] mb-4">Type at least 2 characters to search...</p>
+            )}
             <div className="space-y-3">
               {searchResults.map(u => (
                 <UserCard key={u.id} user={u} actions={
@@ -217,6 +235,9 @@ export default function FriendsPage() {
                   </button>
                 } />
               ))}
+              {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+                <p className="text-center text-[var(--color-text-muted)] py-8">No users found matching &quot;{searchQuery}&quot;</p>
+              )}
             </div>
           </div>
         )}
@@ -224,3 +245,4 @@ export default function FriendsPage() {
     </Layout>
   );
 }
+

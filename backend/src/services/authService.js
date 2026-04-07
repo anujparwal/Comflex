@@ -181,6 +181,24 @@ async function setUsername(userId, username) {
     );
   }
 
+  // Get current user to check cooldown
+  const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+  if (!currentUser) {
+    throw Object.assign(new Error('User not found.'), { statusCode: 404, code: 'USER_NOT_FOUND' });
+  }
+
+  // Enforce 30-day cooldown (only if user already has a username)
+  if (currentUser.username && currentUser.usernameChangedAt) {
+    const daysSinceChange = (Date.now() - new Date(currentUser.usernameChangedAt).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceChange < 30) {
+      const daysLeft = Math.ceil(30 - daysSinceChange);
+      throw Object.assign(
+        new Error(`You can change your username again in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`),
+        { statusCode: 429, code: 'USERNAME_COOLDOWN' }
+      );
+    }
+  }
+
   // Check uniqueness (case-insensitive)
   const existing = await prisma.user.findFirst({
     where: { username: { equals: username, mode: 'insensitive' } },
@@ -194,7 +212,7 @@ async function setUsername(userId, username) {
 
   const user = await prisma.user.update({
     where: { id: userId },
-    data: { username },
+    data: { username, usernameChangedAt: new Date() },
   });
 
   return { message: 'Username set successfully.', username: user.username };

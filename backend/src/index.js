@@ -31,9 +31,9 @@ const httpServer = http.createServer(app);
 // MIDDLEWARE
 // ============================================================
 
-// CORS — allow frontend origin
+// CORS — allow frontend origin (in dev, allow any origin for LAN access)
 app.use(cors({
-  origin: env.FRONTEND_URL,
+  origin: env.NODE_ENV === 'development' ? true : env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -82,8 +82,8 @@ async function startServer() {
     // Initialize Socket.IO for real-time chat + DMs
     initSocket(httpServer, env.FRONTEND_URL);
 
-    httpServer.listen(env.PORT, () => {
-      console.log(`\n🚀 Comflex Backend running on http://localhost:${env.PORT}`);
+    httpServer.listen(env.PORT, '0.0.0.0', () => {
+      console.log(`\n🚀 Comflex Backend running on http://0.0.0.0:${env.PORT}`);
       console.log(`   Environment: ${env.NODE_ENV}`);
       console.log(`   Frontend URL: ${env.FRONTEND_URL}`);
       console.log(`   WebSocket: enabled`);

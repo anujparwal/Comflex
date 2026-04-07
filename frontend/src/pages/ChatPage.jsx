@@ -13,6 +13,7 @@ import { groupApi } from '../api/groupApi';
 import Layout from '../components/Layout';
 import MessageBubble from '../components/MessageBubble';
 import GroupSidebar from '../components/GroupSidebar';
+import UserProfilePanel from '../components/UserProfilePanel';
 
 export default function ChatPage() {
   const { id: groupId } = useParams();
@@ -27,6 +28,7 @@ export default function ChatPage() {
   const [typingUsers, setTypingUsers] = useState([]);
   const [showSidebar, setShowSidebar] = useState(false);
   const [membership, setMembership] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(null);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -232,6 +234,7 @@ export default function ChatPage() {
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onPin={handlePin}
+                    onUserClick={(userId) => setSelectedUserId(userId)}
                   />
                 ))
               )}
@@ -265,8 +268,17 @@ export default function ChatPage() {
             </form>
           </div>
 
+          {/* User Profile Panel */}
+          {selectedUserId && (
+            <UserProfilePanel
+              userId={selectedUserId}
+              currentUserId={user?.id}
+              onClose={() => setSelectedUserId(null)}
+            />
+          )}
+
           {/* Sidebar */}
-          {showSidebar && (
+          {showSidebar && !selectedUserId && (
             <div className="w-64 glass-card overflow-y-auto flex-shrink-0 hidden md:block">
               <GroupSidebar
                 groupId={groupId}

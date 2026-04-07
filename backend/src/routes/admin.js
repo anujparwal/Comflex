@@ -194,7 +194,11 @@ router.post(
   [
     body('email').isEmail().withMessage('A valid test email is required.'),
     body('pattern').isString().withMessage('Pattern is required.'),
-    body('captureGroup').isInt({ min: 0 }).withMessage('captureGroup must be a non-negative integer.'),
+    body('captureGroup').custom((val) => {
+      const n = Number(val);
+      if (isNaN(n) || n < 0 || !Number.isInteger(n)) throw new Error('captureGroup must be a non-negative integer.');
+      return true;
+    }),
   ],
   async (req, res, next) => {
     try {
@@ -205,7 +209,8 @@ router.post(
         );
       }
 
-      const { email, pattern, captureGroup, yearOffset = 0, branchCaptureGroup, branchMapping } = req.body;
+      const { email, pattern, yearOffset = 0, branchCaptureGroup, branchMapping } = req.body;
+      const captureGroup = Number(req.body.captureGroup);
 
       let regex;
       try {
@@ -221,11 +226,21 @@ router.post(
           extractedYear: null,
           extractedBranch: null,
           predictedTags: [],
-          message: 'Email did not match the pattern.',
+          message: `Email did not match the pattern (or capture group ${captureGroup} not found). Match groups: ${match ? match.length - 1 : 0}`,
         });
       }
 
-      const year = parseInt(match[captureGroup], 10) + yearOffset;
+      const yearRaw = parseInt(match[captureGroup], 10);
+      if (isNaN(yearRaw)) {
+        return success(res, {
+          matched: true,
+          extractedYear: null,
+          extractedBranch: null,
+          predictedTags: [],
+          message: `Capture group ${captureGroup} matched "${match[captureGroup]}" which is not a number. Check your capture group index.`,
+        });
+      }
+      const year = yearRaw + yearOffset;
       const primaryName = `cohort-${year}`;
       const crossSenior = `cohort-${Math.min(year, year - 1)}-${Math.max(year, year - 1)}`;
       const crossJunior = `cohort-${Math.min(year, year + 1)}-${Math.max(year, year + 1)}`;
@@ -235,8 +250,10 @@ router.post(
       // Extract branch if configured
       let extractedBranch = null;
       let branchLabel = null;
-      if (branchCaptureGroup !== undefined && match[branchCaptureGroup]) {
-        extractedBranch = match[branchCaptureGroup].toLowerCase();
+      const bcg = branchCaptureGroup !== undefined && branchCaptureGroup !== null && branchCaptureGroup !== ''
+        ? parseInt(branchCaptureGroup, 10) : null;
+      if (bcg !== null && !isNaN(bcg) && match[bcg]) {
+        extractedBranch = match[bcg].toLowerCase();
         branchLabel = branchMapping?.[extractedBranch] || extractedBranch;
         predictedTags.push(`branch-${extractedBranch}`);
       }
@@ -254,6 +271,29 @@ router.post(
     }
   }
 );
+
+// ============================================================
+// ADMIN GROUP MANAGEMENT
+// ============================================================
+
+/**
+ * GET /api/v1/admin/groups
+ * List ALL groups on the platform with member counts (admin only).
+ */
+router.get('/groups', async (req, res, next) => {
+  try {
+    const groups = await prisma.cohortGroup.findMany({
+      include: { _count: { select: { members: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return success(res, groups.map(g => ({
+      ...g,
+      memberCount: g._count.members,
+    })));
+  } catch (err) {
+    next(err);
+  }
+});
 
 // ============================================================
 // AUTO-JOIN RULES
@@ -354,12 +394,17 @@ router.post(
 
       const match = req.body.email.match(regex);
       if (!match) {
-        return success(res, { autoJoinGroups: [], message: 'Email did not match the pattern.' });
+        return success(res, { extractedYear: null, extractedBranch: null, autoJoinGroups: [], message: 'Email did not match the pattern.' });
       }
 
-      const year = match[rules.captureGroup] ? parseInt(match[rules.captureGroup], 10) + (rules.yearOffset || 0) : null;
-      const branch = rules.branchCaptureGroup !== undefined && match[rules.branchCaptureGroup]
-        ? match[rules.branchCaptureGroup].toLowerCase()
+      const cg = parseInt(rules.captureGroup, 10);
+      const yearRaw = !isNaN(cg) && match[cg] ? parseInt(match[cg], 10) : null;
+      const year = yearRaw !== null && !isNaN(yearRaw) ? yearRaw + (rules.yearOffset || 0) : null;
+
+      const bcg = rules.branchCaptureGroup !== undefined && rules.branchCaptureGroup !== null
+        ? parseInt(rules.branchCaptureGroup, 10) : null;
+      const branch = bcg !== null && !isNaN(bcg) && match[bcg]
+        ? match[bcg].toLowerCase()
         : null;
 
       const autoJoinRules = config.autoJoinRules || [];
@@ -368,11 +413,16 @@ router.post(
       for (const rule of autoJoinRules) {
         let matches = false;
         if (rule.matchField === 'year' && year !== null) {
-          matches = rule.matchValue === String(year);
+          const y2 = String(year % 100); // "29" from 2029
+          const y4 = String(year);       // "2029"
+          matches = rule.matchValue === y2 || rule.matchValue === y4;
         } else if (rule.matchField === 'branch' && branch) {
           matches = rule.matchValue.toLowerCase() === branch;
         } else if (rule.matchField === 'both' && year !== null && branch) {
-          matches = rule.matchValue === `${year}-${branch}`;
+          const y2 = String(year % 100);
+          const y4 = String(year);
+          const mv = rule.matchValue.toLowerCase();
+          matches = mv === `${y2}-${branch}` || mv === `${y4}-${branch}`;
         }
 
         if (matches) {
@@ -471,6 +521,106 @@ router.patch(
 );
 
 /**
+ * POST /api/v1/admin/users/create-test
+ * Create a test user directly (bypasses registration gate).
+ * Useful for testing cohort rules and group functionality.
+ */
+router.post(
+  '/users/create-test',
+  [
+    body('email').isEmail().withMessage('A valid email is required.'),
+    body('displayName').trim().notEmpty().withMessage('Display name is required.'),
+    body('password').optional().isLength({ min: 4 }).withMessage('Password must be at least 4 characters.'),
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400,
+          errors.array().map(e => ({ field: e.path, issue: e.msg }))
+        );
+      }
+
+      const { email, displayName, password = 'test123' } = req.body;
+
+      // Check for duplicate email
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) {
+        return error(res, 'DUPLICATE_EMAIL', 'A user with this email already exists.', 409);
+      }
+
+      // Hash the password
+      const { hashPassword } = require('../utils/password');
+      const hashedPw = await hashPassword(password);
+
+      // Create the user
+      const user = await prisma.user.create({
+        data: {
+          email,
+          password: hashedPw,
+          displayName,
+          globalRing: 3,
+          hasPassword: true,
+          cohortTags: [],
+          displayBadges: [],
+        },
+      });
+
+      // Auto-assign cohort tags
+      const { assignCohortTags } = require('../services/cohortService');
+      const tags = await assignCohortTags(user.id, email);
+
+      // Fetch updated user
+      const updatedUser = await prisma.user.findUnique({ where: { id: user.id } });
+
+      return success(res, {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        displayName: updatedUser.displayName,
+        globalRing: updatedUser.globalRing,
+        cohortTags: updatedUser.cohortTags,
+        message: `Test user created. Tags: ${tags.join(', ') || 'none'}`,
+      }, 201);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/users/retag-all
+ * Re-process ALL users through current cohort + auto-join rules.
+ * Useful after changing auto-join config to apply to existing users.
+ */
+router.post('/users/retag-all', async (req, res, next) => {
+  try {
+    const allUsers = await prisma.user.findMany({
+      select: { id: true, email: true },
+    });
+
+    let processed = 0;
+    let failed = 0;
+    for (const u of allUsers) {
+      try {
+        await retagUser(u.id);
+        processed++;
+      } catch {
+        failed++;
+      }
+    }
+
+    return success(res, {
+      message: `Re-tagged ${processed} users. ${failed > 0 ? `${failed} failed.` : ''}`,
+      processed,
+      failed,
+      total: allUsers.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/v1/admin/users/:id/retag
  * Re-process a user's email and reassign cohort tags.
  */
@@ -516,5 +666,45 @@ router.patch(
     }
   }
 );
+
+/**
+ * DELETE /api/v1/admin/users/:id
+ * Permanently delete a user and all associated data.
+ * Cannot delete yourself.
+ */
+router.delete('/users/:id', async (req, res, next) => {
+  try {
+    const userId = req.params.id;
+
+    // Prevent self-deletion
+    if (userId === req.user.id) {
+      return error(res, 'SELF_DELETE', 'You cannot delete your own account.', 400);
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return error(res, 'USER_NOT_FOUND', 'User not found.', 404);
+    }
+
+    // Cannot delete another admin
+    if (user.globalRing === 0 && userId !== req.user.id) {
+      return error(res, 'ADMIN_DELETE', 'Cannot delete another admin. Demote them first.', 403);
+    }
+
+    // Delete all associated data
+    await prisma.$transaction([
+      prisma.groupMember.deleteMany({ where: { userId } }),
+      prisma.message.deleteMany({ where: { authorId: userId } }),
+      prisma.directMessage.deleteMany({ where: { OR: [{ senderId: userId }, { receiverId: userId }] } }),
+      prisma.friendship.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
+      prisma.muteRecord.deleteMany({ where: { userId } }),
+      prisma.user.delete({ where: { id: userId } }),
+    ]);
+
+    return success(res, { message: `User "${user.displayName}" deleted.` });
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;

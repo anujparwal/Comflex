@@ -21,9 +21,10 @@ let io;
  * Initialize Socket.IO on the HTTP server.
  */
 function initSocket(httpServer, frontendUrl) {
+  const env = require('../config/env');
   io = new Server(httpServer, {
     cors: {
-      origin: frontendUrl,
+      origin: env.NODE_ENV === 'development' ? true : frontendUrl,
       methods: ['GET', 'POST'],
       credentials: true,
     },

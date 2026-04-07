@@ -13,7 +13,7 @@ const RING_COLORS = {
   2: 'var(--color-accent)',
 };
 
-export default function MessageBubble({ message, currentUserId, permissions = {}, isAdmin, onEdit, onDelete, onPin }) {
+export default function MessageBubble({ message, currentUserId, permissions = {}, isAdmin, onEdit, onDelete, onPin, onUserClick }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
 
@@ -31,10 +31,14 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
 
   const ringColor = RING_COLORS[author.globalRing] || 'var(--color-text-muted)';
 
+  const handleAuthorClick = () => {
+    if (!isOwn && onUserClick) onUserClick(message.authorId);
+  };
+
   return (
     <div className={`flex gap-3 p-3 rounded-xl transition-colors hover:bg-[var(--color-bg-secondary)] group ${message.isDeleted ? 'opacity-50' : ''}`}>
       {/* Avatar */}
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0 cursor-pointer" onClick={handleAuthorClick}>
         {author.avatarUrl ? (
           <img src={author.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover" />
         ) : (
@@ -50,7 +54,7 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <span className="font-semibold text-sm" style={{ color: ringColor }}>{author.displayName || 'Unknown'}</span>
+          <span className="font-semibold text-sm cursor-pointer hover:underline" style={{ color: ringColor }} onClick={handleAuthorClick}>{author.displayName || 'Unknown'}</span>
           {/* Badges */}
           {author.displayBadges?.slice(0, 3).map((badge, i) => (
             <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-card)] text-[var(--color-text-muted)]">{badge}</span>
