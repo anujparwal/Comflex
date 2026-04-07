@@ -51,7 +51,7 @@ export default function Layout({ children }) {
               to={item.path}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                 location.pathname === item.path
-                  ? 'bg-[var(--color-accent)] bg-opacity-15 text-[var(--color-accent-light)]'
+                  ? 'chip-accent'
                   : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]'
               }`}
             >

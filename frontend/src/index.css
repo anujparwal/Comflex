@@ -150,6 +150,44 @@ textarea:focus {
   border-radius: 8px;
 }
 
+/* Alert utilities — Tailwind v4 doesn't support bg-opacity with CSS vars */
+.alert {
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  border: 1px solid transparent;
+}
+
+.alert-danger {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.alert-success {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.alert-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.alert-info {
+  background: rgba(108, 99, 255, 0.1);
+  border-color: rgba(108, 99, 255, 0.3);
+  color: var(--color-accent-light);
+}
+
+/* Tag/badge chip with accent bg */
+.chip-accent {
+  background: rgba(108, 99, 255, 0.15);
+  color: var(--color-accent-light);
+}
+
 /* Ring badge colors */
 .ring-badge-0 { background: var(--color-ring-0); }
 .ring-badge-1 { background: var(--color-ring-1); }

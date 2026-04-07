@@ -128,7 +128,7 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
               <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide mb-2">Cohort Groups</p>
               <div className="flex flex-wrap gap-1.5">
                 {profile.cohortTags.map((tag) => (
-                  <span key={tag} className="px-2 py-1 bg-[var(--color-accent)] bg-opacity-15 text-[var(--color-accent-light)] rounded-full text-xs">
+                  <span key={tag} className="px-2 py-1 chip-accent rounded-full text-xs">
                     {tag}
                   </span>
                 ))}
@@ -154,8 +154,8 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
           {message && (
             <div className={`text-xs p-2 rounded-lg text-center ${
               message.includes('sent') || message.includes('accepted')
-                ? 'bg-green-500/10 text-green-400'
-                : 'bg-red-500/10 text-red-400'
+                ? 'bg-[rgba(16,185,129,0.1)] text-green-400'
+                : 'bg-[rgba(239,68,68,0.1)] text-red-400'
             }`}>{message}</div>
           )}
 

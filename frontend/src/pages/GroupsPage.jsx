@@ -38,7 +38,7 @@ export default function GroupsPage() {
           <h1 className="text-2xl font-bold">Groups</h1>
           <div className="flex items-center gap-3">
             {isAdmin && (
-              <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--color-accent)] bg-opacity-20 text-[var(--color-accent-light)]">
+              <span className="text-xs px-2.5 py-1 rounded-full chip-accent">
                 Admin View — All Groups
               </span>
             )}

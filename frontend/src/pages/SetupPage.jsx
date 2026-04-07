@@ -114,7 +114,7 @@ export default function SetupPage() {
 
         <div className="glass-card p-8">
           {error && (
-            <div className="bg-[var(--color-danger)] bg-opacity-10 border border-[var(--color-danger)] border-opacity-30 text-[var(--color-danger)] rounded-xl p-3 mb-4 text-sm">
+            <div className="alert alert-danger mb-4">
               {error}
             </div>
           )}
@@ -193,8 +193,8 @@ export default function SetupPage() {
                 {previewResult && (
                   <div className={`mt-3 p-3 rounded-xl text-sm ${
                     previewResult.matched
-                      ? 'bg-[var(--color-success)] bg-opacity-10 text-[var(--color-success)]'
-                      : 'bg-[var(--color-warning)] bg-opacity-10 text-[var(--color-warning)]'
+                      ? 'alert-success'
+                      : 'alert-warning'
                   }`}>
                     {previewResult.matched ? (
                       <>

@@ -61,7 +61,7 @@ export default function RegisterPage() {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+          <div className="alert alert-danger mb-6">
             {error}
           </div>
         )}
@@ -81,7 +81,7 @@ export default function RegisterPage() {
               />
             </GoogleOAuthProvider>
           ) : (
-            <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm text-center">
+            <div className="alert alert-warning text-center">
               Google OAuth is not configured. Set <code>VITE_GOOGLE_CLIENT_ID</code> in the frontend <code>.env</code>.
             </div>
           )}
