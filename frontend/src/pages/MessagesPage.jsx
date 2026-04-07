@@ -103,7 +103,7 @@ export default function MessagesPage() {
                 onClick={() => navigate(`/messages/${conv.partner?.id}`)}
                 className={`w-full flex items-center gap-3 p-4 text-left transition-colors border-b border-[var(--color-border)] ${
                   activeUserId === conv.partner?.id
-                    ? 'bg-[var(--color-accent)]/10'
+                    ? 'bg-[rgba(108,99,255,0.1)]'
                     : 'hover:bg-[var(--color-bg-card)]'
                 }`}
               >

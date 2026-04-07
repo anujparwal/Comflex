@@ -97,10 +97,10 @@ export default function ProfilePage() {
         <h1 className="text-2xl font-bold mb-8">My Profile</h1>
 
         {message && (
-          <div className={`rounded-xl p-3 mb-6 text-sm ${
+          <div className={`alert mb-6 ${
             message.includes('success') || message.includes('updated')
-              ? 'bg-[var(--color-success)] bg-opacity-10 border border-[var(--color-success)] border-opacity-30 text-[var(--color-success)]'
-              : 'bg-[var(--color-danger)] bg-opacity-10 border border-[var(--color-danger)] border-opacity-30 text-[var(--color-danger)]'
+              ? 'alert-success'
+              : 'alert-danger'
           }`}>
             {message}
           </div>
@@ -227,7 +227,7 @@ export default function ProfilePage() {
           {user.cohortTags?.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {user.cohortTags.map((tag) => (
-                <span key={tag} className="px-3 py-1.5 bg-[var(--color-accent)] bg-opacity-15 text-[var(--color-accent-light)] rounded-full text-sm">
+                <span key={tag} className="px-3 py-1.5 chip-accent rounded-full text-sm">
                   {tag}
                 </span>
               ))}

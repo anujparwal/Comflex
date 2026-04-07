@@ -76,13 +76,13 @@ export default function ResetPasswordPage() {
               <h2 className="text-xl font-bold mb-6">Reset Password</h2>
 
               {!token && (
-                <div className="bg-[var(--color-warning)] bg-opacity-10 border border-[var(--color-warning)] border-opacity-30 text-[var(--color-warning)] rounded-xl p-3 mb-4 text-sm">
+                <div className="alert alert-warning mb-4">
                   ⚠️ No reset token found. Please use the link from your email.
                 </div>
               )}
 
               {error && (
-                <div className="bg-[var(--color-danger)] bg-opacity-10 border border-[var(--color-danger)] border-opacity-30 text-[var(--color-danger)] rounded-xl p-3 mb-4 text-sm">
+                <div className="alert alert-danger mb-4">
                   {error}
                 </div>
               )}

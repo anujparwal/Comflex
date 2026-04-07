@@ -718,7 +718,7 @@ function UsersTab() {
               {/* Tags */}
               <div className="hidden lg:flex gap-1 flex-shrink-0">
                 {u.cohortTags?.slice(0, 2).map((tag) => (
-                  <span key={tag} className="px-2 py-0.5 bg-[var(--color-accent)] bg-opacity-10 text-[var(--color-accent-light)] rounded text-xs">
+                  <span key={tag} className="px-2 py-0.5 chip-accent rounded text-xs">
                     {tag}
                   </span>
                 ))}
@@ -729,7 +729,7 @@ function UsersTab() {
                 onClick={() => handleToggleCreateGroups(u.id, u.canCreateGroups)}
                 className={`text-xs px-2 py-1 rounded-lg transition-colors flex-shrink-0 ${
                   u.canCreateGroups
-                    ? 'bg-[var(--color-success)] bg-opacity-15 text-[var(--color-success)] border border-[var(--color-success)] border-opacity-30'
+                    ? 'chip-accent border border-[rgba(16,185,129,0.3)]'
                     : 'bg-[var(--color-bg-card)] text-[var(--color-text-muted)] border border-[var(--color-border)]'
                 }`}
                 title={u.canCreateGroups ? 'Click to revoke group creation' : 'Click to grant group creation'}
@@ -757,7 +757,7 @@ function UsersTab() {
               {/* Delete button */}
               <button
                 onClick={() => handleDeleteUser(u.id, u.displayName)}
-                className="text-xs px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
+                className="text-xs px-2 py-1 rounded-lg border border-[rgba(239,68,68,0.3)] text-red-400 hover:bg-[rgba(239,68,68,0.1)] transition-colors flex-shrink-0"
                 title="Delete user permanently"
               >
                 🗑

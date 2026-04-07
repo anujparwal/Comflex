@@ -124,7 +124,7 @@ export default function FriendsPage() {
         <h1 className="text-2xl font-bold mb-6">Friends</h1>
 
         {message && (
-          <div className="mb-4 p-3 rounded-xl bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/30 text-sm text-[var(--color-accent-light)]">
+          <div className="alert alert-info mb-4">
             {message}
           </div>
         )}
