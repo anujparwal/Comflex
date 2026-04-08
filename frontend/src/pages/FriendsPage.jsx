@@ -82,6 +82,10 @@ export default function FriendsPage() {
           break;
       }
       await fetchData();
+      if (tab === 'search' && searchQuery.trim().length >= 2) {
+        const res = await userApi.searchUsers(searchQuery);
+        setSearchResults(res.data.data || []);
+      }
     } catch (err) {
       setMessage(err.response?.data?.error?.message || err.response?.data?.message || 'Action failed.');
     } finally {
@@ -196,7 +200,16 @@ export default function FriendsPage() {
             )}
             {sent.map(s => (
               <UserCard key={s.friendshipId} user={s} actions={
-                <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-bg-card)] px-3 py-1.5 rounded-lg">Pending</span>
+                <>
+                  <span className="text-xs text-[var(--color-warning)] bg-[var(--color-bg-card)] px-3 py-1.5 rounded-lg flex items-center">Pending</span>
+                  <button 
+                    onClick={() => handleAction('remove', s.friendshipId)} 
+                    className="btn btn-secondary text-xs py-1.5 px-3"
+                    disabled={actionLoading === s.friendshipId}
+                  >
+                    Cancel
+                  </button>
+                </>
               } />
             ))}
           </div>
@@ -226,13 +239,43 @@ export default function FriendsPage() {
             <div className="space-y-3">
               {searchResults.map(u => (
                 <UserCard key={u.id} user={u} actions={
-                  <button 
-                    onClick={() => handleAction('send', u.id)} 
-                    className="btn btn-primary text-xs py-1.5 px-3"
-                    disabled={actionLoading === u.id}
-                  >
-                    Add Friend
-                  </button>
+                  <>
+                    <a href={`/messages/${u.id}`} className="btn btn-secondary text-[var(--color-accent)] text-xs py-1.5 px-3">
+                      Message
+                    </a>
+                    {u.friendshipStatus === 'accepted' ? (
+                      <button 
+                        onClick={() => handleAction('remove', u.friendshipId)} 
+                        className="btn btn-secondary text-[var(--color-danger)] text-xs py-1.5 px-3"
+                        disabled={actionLoading === u.friendshipId}
+                      >
+                        Unfriend
+                      </button>
+                    ) : u.friendshipStatus === 'pending' ? (
+                      u.isRequester ? (
+                        <button 
+                          onClick={() => handleAction('remove', u.friendshipId)} 
+                          className="btn btn-secondary text-xs py-1.5 px-3"
+                          disabled={actionLoading === u.friendshipId}
+                        >
+                          Cancel Request
+                        </button>
+                      ) : (
+                        <div className="flex gap-1">
+                          <button onClick={() => handleAction('accept', u.friendshipId)} className="btn btn-primary text-xs py-1.5 px-3" disabled={actionLoading === u.friendshipId}>Accept</button>
+                          <button onClick={() => handleAction('reject', u.friendshipId)} className="btn btn-secondary text-xs py-1.5 px-3" disabled={actionLoading === u.friendshipId}>Reject</button>
+                        </div>
+                      )
+                    ) : (
+                      <button 
+                        onClick={() => handleAction('send', u.id)} 
+                        className="btn btn-primary text-xs py-1.5 px-3"
+                        disabled={actionLoading === u.id}
+                      >
+                        Add Friend
+                      </button>
+                    )}
+                  </>
                 } />
               ))}
               {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (

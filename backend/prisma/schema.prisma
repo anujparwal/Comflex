@@ -94,6 +94,7 @@ model CohortGroup {
   type        String           // "primary" | "cross-year" | "custom"
   creatorId   String?  @db.ObjectId // User who created the group (null for system-created)
   ringConfig  Json?            // { ringCount: 5, ringLabels: { 0: "Admin", 1: "Manager", ... } }
+  inviteToken String?  @unique // unique token for invite links
   createdAt   DateTime @default(now())
 
   // Relations
@@ -230,6 +231,17 @@ model DirectMessage {
   isRead     Boolean   @default(false)
   readAt     DateTime?            // When the message was read
   isDeleted  Boolean   @default(false)
+  
+  // Chat Actions & Multimedia
+  replyToId   String?  @db.ObjectId
+  reactions   Json?    
+  forwarded   Boolean  @default(false)
+  msgType     String   @default("text") // text, image, document, sticker
+  fileUrl     String?
+  fileName    String?
+  fileSize    Int?
+  mimetype    String?
+
   createdAt  DateTime  @default(now())
   editedAt   DateTime?
 }

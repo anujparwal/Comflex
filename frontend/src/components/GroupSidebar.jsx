@@ -11,7 +11,7 @@ import { groupApi } from '../api/groupApi';
 const RING_LABELS = ['Admin', 'Manager', 'Elevated', 'Member', 'Restricted'];
 const RING_COLORS = ['var(--color-danger)', 'var(--color-warning)', 'var(--color-accent)', 'var(--color-text-secondary)', 'var(--color-text-muted)'];
 
-export default function GroupSidebar({ groupId, userPermissions = {}, currentUserId, isAdmin }) {
+export default function GroupSidebar({ groupId, userPermissions = {}, currentUserId, isAdmin, onUserClick }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -91,10 +91,11 @@ export default function GroupSidebar({ groupId, userPermissions = {}, currentUse
             <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors group">
               {/* Avatar */}
               {m.avatarUrl ? (
-                <img src={m.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+                <img src={m.avatarUrl} alt="" onClick={(e) => { e.stopPropagation(); onUserClick?.(m.id); }} className="w-8 h-8 rounded-full object-cover cursor-pointer hover:opacity-80" />
               ) : (
                 <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                  onClick={(e) => { e.stopPropagation(); onUserClick?.(m.id); }}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold cursor-pointer hover:opacity-80"
                   style={{ backgroundColor: RING_COLORS[Math.min(m.groupRing, 4)] }}
                 >
                   {m.displayName?.charAt(0)?.toUpperCase()}
@@ -102,8 +103,8 @@ export default function GroupSidebar({ groupId, userPermissions = {}, currentUse
               )}
 
               {/* Name + Ring */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{m.displayName}</p>
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={(e) => { e.stopPropagation(); onUserClick?.(m.id); }}>
+                <p className="text-sm font-medium truncate hover:underline">{m.displayName}</p>
                 <p className="text-xs" style={{ color: RING_COLORS[Math.min(m.groupRing, 4)] }}>
                   {RING_LABELS[m.groupRing] || `Ring ${m.groupRing}`}
                 </p>

@@ -33,15 +33,12 @@ async function requireFriendship(userId, otherUserId) {
 }
 
 /**
- * Send a direct message to a friend.
+ * Send a direct message to a user.
  */
-async function sendDM(senderId, receiverId, content) {
+async function sendDM(senderId, receiverId, data) {
   if (senderId === receiverId) {
     throw Object.assign(new Error('Cannot message yourself.'), { statusCode: 400, code: 'SELF_MESSAGE' });
   }
-
-  // Verify friendship
-  await requireFriendship(senderId, receiverId);
 
   // Verify receiver exists
   const receiver = await prisma.user.findUnique({ where: { id: receiverId } });
@@ -50,7 +47,17 @@ async function sendDM(senderId, receiverId, content) {
   }
 
   const message = await prisma.directMessage.create({
-    data: { senderId, receiverId, content },
+    data: {
+      senderId,
+      receiverId,
+      content: data.content || '',
+      replyToId: data.replyToId || null,
+      forwarded: data.forwarded || false,
+      msgType: data.msgType || 'text',
+      fileUrl: data.fileUrl || null,
+      fileName: data.fileName || null,
+      fileSize: data.fileSize || null,
+    },
   });
 
   return message;
@@ -60,8 +67,6 @@ async function sendDM(senderId, receiverId, content) {
  * Get paginated conversation between two users.
  */
 async function getConversation(userId, otherUserId, { page = 1, limit = 50 } = {}) {
-  // Verify friendship
-  await requireFriendship(userId, otherUserId);
 
   const skip = (page - 1) * limit;
 
@@ -71,11 +76,22 @@ async function getConversation(userId, otherUserId, { page = 1, limit = 50 } = {
         { senderId: userId, receiverId: otherUserId },
         { senderId: otherUserId, receiverId: userId },
       ],
-      isDeleted: false,
     },
     orderBy: { createdAt: 'desc' },
     skip,
     take: limit,
+  });
+
+  // Fetch senders to attach author object
+  const senderIds = [...new Set(messages.map(m => m.senderId))];
+  const senders = await prisma.user.findMany({
+    where: { id: { in: senderIds } },
+    select: { id: true, displayName: true, username: true, avatarUrl: true, globalRing: true, displayBadges: true },
+  });
+
+  const messagesWithAuthor = messages.map(msg => {
+    const author = senders.find(s => s.id === msg.senderId);
+    return { ...msg, author };
   });
 
   const total = await prisma.directMessage.count({
@@ -84,12 +100,11 @@ async function getConversation(userId, otherUserId, { page = 1, limit = 50 } = {
         { senderId: userId, receiverId: otherUserId },
         { senderId: otherUserId, receiverId: userId },
       ],
-      isDeleted: false,
     },
   });
 
   return {
-    messages: messages.reverse(), // Return in chronological order
+    messages: messagesWithAuthor.reverse(), // Return in chronological order
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }
@@ -132,12 +147,32 @@ async function listConversations(userId) {
     select: { id: true, displayName: true, username: true, avatarUrl: true },
   });
 
+  // Check which partners are currently friends
+  const friendships = await prisma.friendship.findMany({
+    where: {
+      status: 'accepted',
+      OR: [
+        { requesterId: userId, addresseeId: { in: partnerIds } },
+        { requesterId: { in: partnerIds }, addresseeId: userId },
+      ],
+    },
+  });
+
+  const friendIds = new Set();
+  for (const f of friendships) {
+    if (f.requesterId === userId) friendIds.add(f.addresseeId);
+    else friendIds.add(f.requesterId);
+  }
+
   // Build response
   return partnerIds.map(partnerId => {
     const { lastMessage, unreadCount } = conversationMap.get(partnerId);
     const partner = partners.find(p => p.id === partnerId);
     return {
-      partner,
+      partner: {
+        ...partner,
+        isFriend: friendIds.has(partnerId)
+      },
       lastMessage: {
         content: lastMessage.content,
         createdAt: lastMessage.createdAt,
@@ -184,4 +219,27 @@ async function deleteDM(messageId, userId) {
   return { message: 'Message deleted.' };
 }
 
-module.exports = { sendDM, getConversation, listConversations, markAsRead, deleteDM };
+/**
+ * Edit a DM (only the sender can edit their own message).
+ */
+async function editDM(messageId, userId, newContent) {
+  const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
+  if (!message) {
+    throw Object.assign(new Error('Message not found.'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+  if (message.senderId !== userId) {
+    throw Object.assign(new Error('You can only edit your own messages.'), { statusCode: 403, code: 'NOT_SENDER' });
+  }
+  if (message.isDeleted) {
+    throw Object.assign(new Error('Cannot edit a deleted message.'), { statusCode: 400, code: 'DELETED' });
+  }
+
+  const updated = await prisma.directMessage.update({
+    where: { id: messageId },
+    data: { content: newContent, editedAt: new Date() },
+  });
+
+  return updated;
+}
+
+module.exports = { sendDM, getConversation, listConversations, markAsRead, deleteDM, editDM };

@@ -32,6 +32,7 @@ export const groupApi = {
   createGroupInvite: (groupId, userId) => client.post(`/groups/${groupId}/invites`, { userId }),
   acceptInvite: (groupId, inviteId) => client.post(`/groups/${groupId}/invites/${inviteId}/accept`),
   rejectInvite: (groupId, inviteId) => client.post(`/groups/${groupId}/invites/${inviteId}/reject`),
+  getInviteLink: (groupId) => client.get(`/groups/${groupId}/invite-link`),
 
   // User search for invites
   searchUsersForGroup: (groupId, query) =>

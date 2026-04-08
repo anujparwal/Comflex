@@ -11,8 +11,19 @@ export const dmApi = {
   getMessages: (userId, page = 1, limit = 50) =>
     client.get(`/dm/${userId}?page=${page}&limit=${limit}`),
 
-  sendMessage: (userId, content) =>
-    client.post(`/dm/${userId}`, { content }),
+  sendMessage: (userId, data) =>
+    client.post(`/dm/${userId}`, data),
+
+  uploadAttachment: (file) => {
+    const formData = new FormData();
+    formData.append('attachment', file);
+    return client.post('/dm/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+
+  editMessage: (msgId, content) =>
+    client.put(`/dm/messages/${msgId}`, { content }),
 
   markRead: (userId) =>
     client.patch(`/dm/${userId}/read`),

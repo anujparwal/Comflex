@@ -63,6 +63,10 @@ export default function GroupSettingsPanel({ groupId, group, currentUserId, onCl
   const [editDefaultRing, setEditDefaultRing] = useState(defaultRing);
   const [savingRoles, setSavingRoles] = useState(false);
 
+  // Invite Link State
+  const [inviteLinkToken, setInviteLinkToken] = useState(null);
+  const [fetchingLink, setFetchingLink] = useState(false);
+
   // Sync state if group config changes
   useEffect(() => {
     setEditRingCount(ringCount);
@@ -130,6 +134,20 @@ export default function GroupSettingsPanel({ groupId, group, currentUserId, onCl
       alert(err.response?.data?.error?.message || 'Failed to invite user.');
     }
   };
+
+  const handleGetInviteLink = async () => {
+    setFetchingLink(true);
+    try {
+      const res = await groupApi.getInviteLink(groupId);
+      setInviteLinkToken(res.data.data.token);
+    } catch (err) {
+      alert(err.response?.data?.error?.message || 'Failed to get invite link.');
+    } finally {
+      setFetchingLink(false);
+    }
+  };
+
+  const currentInviteUrl = inviteLinkToken ? `${window.location.origin}/join/${inviteLinkToken}` : '';
 
   const handleSaveRoles = async () => {
     setSavingRoles(true);
@@ -406,6 +424,38 @@ export default function GroupSettingsPanel({ groupId, group, currentUserId, onCl
                     {inviteQuery.length >= 2 && !inviteSearching && inviteResults.length === 0 && (
                       <p className="text-xs text-[var(--color-text-muted)] text-center py-2">No users found.</p>
                     )}
+
+                    <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+                      <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2">🔗 Shareable Invite Link</p>
+                      {!inviteLinkToken ? (
+                        <button 
+                          onClick={handleGetInviteLink} 
+                          disabled={fetchingLink}
+                          className="btn btn-secondary text-xs px-4 py-2 w-full"
+                        >
+                          {fetchingLink ? 'Generating...' : 'Generate Invite Link'}
+                        </button>
+                      ) : (
+                        <div className="flex gap-2 items-center">
+                          <input 
+                            type="text" 
+                            className="input w-full text-xs font-mono bg-[var(--color-bg-secondary)]" 
+                            readOnly 
+                            value={currentInviteUrl} 
+                          />
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(currentInviteUrl);
+                              alert('Link copied to clipboard!');
+                            }} 
+                            className="btn btn-primary text-xs px-3 py-2 flex-shrink-0"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-[var(--color-text-muted)] mt-2">Anyone with this link can join the group.</p>
+                    </div>
                   </div>
                 )}
               </div>

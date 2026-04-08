@@ -141,7 +141,8 @@ router.get('/search', authMiddleware, async (req, res, next) => {
       return success(res, []);
     }
 
-    const users = await require('../prisma').user.findMany({
+    const prisma = require('../prisma');
+    const users = await prisma.user.findMany({
       where: {
         id: { not: req.user.id },
         OR: [
@@ -164,7 +165,28 @@ router.get('/search', authMiddleware, async (req, res, next) => {
       orderBy: { displayName: 'asc' },
     });
 
-    return success(res, users);
+    // Fetch friendship statuses for these users
+    const userIds = users.map(u => u.id);
+    const friendships = await prisma.friendship.findMany({
+      where: {
+        OR: [
+          { requesterId: req.user.id, addresseeId: { in: userIds } },
+          { requesterId: { in: userIds }, addresseeId: req.user.id },
+        ],
+      },
+    });
+
+    const result = users.map(u => {
+      const f = friendships.find(f => (f.requesterId === u.id || f.addresseeId === u.id));
+      return {
+        ...u,
+        friendshipStatus: f ? f.status : null,
+        friendshipId: f ? f.id : null,
+        isRequester: f ? f.requesterId === req.user.id : null,
+      };
+    });
+
+    return success(res, result);
   } catch (err) {
     next(err);
   }
