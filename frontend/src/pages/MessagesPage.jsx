@@ -1,18 +1,21 @@
 /**
  * MessagesPage — DM conversations list & active chat.
  * Shows all DM conversations in a sidebar and the active chat in the main area.
+ * Features: read receipt tick marks (✓ sent, ✓✓ read), real-time updates.
  */
 
 import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dmApi } from '../api/dmApi';
 import { AuthContext } from '../context/AuthContext';
+import { useSocket } from '../hooks/useSocket';
 import Layout from '../components/Layout';
 
 export default function MessagesPage() {
   const { userId: activeUserId } = useParams();
   const { user: currentUser } = useContext(AuthContext);
   const navigate = useNavigate();
+  const { connected, markDMRead, onEvent } = useSocket();
 
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -38,8 +41,14 @@ export default function MessagesPage() {
     try {
       const res = await dmApi.getMessages(activeUserId);
       setMessages(res.data.data?.messages || []);
-      // Mark as read
-      await dmApi.markRead(activeUserId);
+      // Mark as read via socket (for real-time notification) or REST fallback
+      try {
+        if (connected) {
+          markDMRead(activeUserId).catch(() => {});
+        } else {
+          await dmApi.markRead(activeUserId);
+        }
+      } catch {}
       // Refresh conversations to update unread counts
       await fetchConversations();
     } catch (err) {
@@ -47,10 +56,42 @@ export default function MessagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeUserId, fetchConversations]);
+  }, [activeUserId, fetchConversations, connected, markDMRead]);
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
+
+  // Subscribe to real-time DM events
+  useEffect(() => {
+    if (!connected || !onEvent) return;
+
+    const cleanups = [
+      onEvent('dm:new', (msg) => {
+        // If we're in the active conversation, add the message
+        if (activeUserId && (msg.senderId === activeUserId || msg.receiverId === activeUserId)) {
+          setMessages(prev => [...prev, msg]);
+          // Auto-mark as read since we're viewing this conversation
+          if (msg.senderId === activeUserId) {
+            markDMRead(activeUserId).catch(() => {});
+          }
+        }
+        // Refresh conversation list for unread counts
+        fetchConversations();
+      }),
+      onEvent('dm:readUpdate', ({ readByUserId }) => {
+        // The other user read our messages — update tick marks
+        if (readByUserId === activeUserId) {
+          setMessages(prev => prev.map(m =>
+            m.senderId === currentUser?.id && !m.isRead
+              ? { ...m, isRead: true, readAt: new Date().toISOString() }
+              : m
+          ));
+        }
+      }),
+    ];
+
+    return () => cleanups.forEach(fn => fn?.());
+  }, [connected, onEvent, activeUserId, currentUser?.id, markDMRead, fetchConversations]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -81,6 +122,20 @@ export default function MessagesPage() {
   };
 
   const activePartner = conversations.find(c => c.partner?.id === activeUserId)?.partner;
+
+  // Read receipt tick component
+  const ReadTick = ({ message }) => {
+    if (message.senderId !== currentUser?.id) return null;
+    const isRead = message.isRead;
+    return (
+      <span
+        className={`text-[10px] ml-1 ${isRead ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-muted)]'}`}
+        title={isRead && message.readAt ? `Read at ${new Date(message.readAt).toLocaleTimeString()}` : 'Sent'}
+      >
+        {isRead ? '✓✓' : '✓'}
+      </span>
+    );
+  };
 
   return (
     <Layout>
@@ -164,9 +219,12 @@ export default function MessagesPage() {
                           : 'bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-bl-md'
                       }`}>
                         <p>{msg.content}</p>
-                        <p className={`text-[10px] mt-1 ${isMine ? 'text-white/60' : 'text-[var(--color-text-muted)]'}`}>
-                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </p>
+                        <div className={`flex items-center justify-end gap-0.5 mt-1 ${isMine ? 'text-white/60' : 'text-[var(--color-text-muted)]'}`}>
+                          <span className="text-[10px]">
+                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <ReadTick message={msg} />
+                        </div>
                       </div>
                     </div>
                   );

@@ -1,16 +1,16 @@
 /**
  * Message Service
  *
- * Business logic for chat messages: send, edit, delete, pin/unpin.
- * All permission checks are enforced at the route layer or here.
+ * Business logic for chat messages: send, edit, delete, pin/unpin,
+ * read receipts, and unread tracking.
  */
 
 const prisma = require('../prisma');
 
 /**
- * Get paginated messages for a group (newest first).
+ * Get paginated messages for a group (newest first), with read receipt info.
  */
-async function getMessages(groupId, { page = 1, limit = 50 } = {}) {
+async function getMessages(groupId, { page = 1, limit = 50 } = {}, currentUserId = null) {
   const [messages, total] = await Promise.all([
     prisma.message.findMany({
       where: { groupId },
@@ -24,13 +24,20 @@ async function getMessages(groupId, { page = 1, limit = 50 } = {}) {
             globalRing: true, displayBadges: true,
           },
         },
+        readReceipts: {
+          select: {
+            userId: true,
+            readAt: true,
+          },
+        },
+        _count: { select: { readReceipts: true } },
       },
     }),
     prisma.message.count({ where: { groupId } }),
   ]);
 
   return {
-    messages: messages.map(formatMessage),
+    messages: messages.map(msg => formatMessage(msg, currentUserId)),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }
@@ -48,6 +55,10 @@ async function getMessage(messageId) {
           globalRing: true, displayBadges: true,
         },
       },
+      readReceipts: {
+        select: { userId: true, readAt: true },
+      },
+      _count: { select: { readReceipts: true } },
     },
   });
   if (!msg) throw Object.assign(new Error('Message not found.'), { statusCode: 404, code: 'MESSAGE_NOT_FOUND' });
@@ -57,9 +68,13 @@ async function getMessage(messageId) {
 /**
  * Send a new message.
  */
-async function sendMessage(groupId, authorId, { content, mentions = [], attachments = [] }) {
+async function sendMessage(groupId, authorId, params) {
+  const { content, mentions = [], attachments = [], replyToId, forwarded = false, msgType = 'text', fileUrl, fileName, fileSize, mimetype } = params;
   const msg = await prisma.message.create({
-    data: { groupId, authorId, content, mentions, attachments },
+    data: { 
+      groupId, authorId, content, mentions, attachments,
+      replyToId, forwarded, msgType, fileUrl, fileName, fileSize, mimetype
+    },
     include: {
       author: {
         select: {
@@ -69,7 +84,13 @@ async function sendMessage(groupId, authorId, { content, mentions = [], attachme
       },
     },
   });
-  return formatMessage(msg);
+
+  // Auto-create read receipt for the author
+  await prisma.messageReadReceipt.create({
+    data: { messageId: msg.id, userId: authorId },
+  }).catch(() => {}); // Ignore if already exists
+
+  return formatMessage({ ...msg, readReceipts: [{ userId: authorId, readAt: new Date() }], _count: { readReceipts: 1 } });
 }
 
 /**
@@ -95,6 +116,10 @@ async function editMessage(messageId, userId, newContent) {
           globalRing: true, displayBadges: true,
         },
       },
+      readReceipts: {
+        select: { userId: true, readAt: true },
+      },
+      _count: { select: { readReceipts: true } },
     },
   });
   return formatMessage(updated);
@@ -102,7 +127,6 @@ async function editMessage(messageId, userId, newContent) {
 
 /**
  * Delete a message (soft delete — marks as deleted).
- * Users can delete their own; those with can_delete_others_messages can delete any.
  */
 async function deleteMessage(messageId, userId, canDeleteOthers = false) {
   const msg = await prisma.message.findUnique({ where: { id: messageId } });
@@ -119,13 +143,108 @@ async function deleteMessage(messageId, userId, canDeleteOthers = false) {
 }
 
 /**
+ * Toggle a reaction on a message.
+ */
+async function toggleReaction(messageId, userId, emoji) {
+  const msg = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!msg) throw Object.assign(new Error('Message not found.'), { statusCode: 404, code: 'MESSAGE_NOT_FOUND' });
+
+  // Reactions are structured as { "👍": ["userId1", "userId2"] }
+  const currentReactions = msg.reactions || {};
+  let usersForEmoji = currentReactions[emoji] || [];
+
+  if (usersForEmoji.includes(userId)) {
+    // Remove if already reacted
+    usersForEmoji = usersForEmoji.filter(id => id !== userId);
+  } else {
+    // Add reaction
+    usersForEmoji.push(userId);
+  }
+
+  // If no users left, remove the emoji key entirely
+  const updatedReactions = { ...currentReactions };
+  if (usersForEmoji.length === 0) {
+    delete updatedReactions[emoji];
+  } else {
+    updatedReactions[emoji] = usersForEmoji;
+  }
+
+  const updatedMsg = await prisma.message.update({
+    where: { id: messageId },
+    data: { reactions: updatedReactions },
+    include: {
+      author: {
+        select: {
+          id: true, displayName: true, avatarUrl: true,
+          globalRing: true, displayBadges: true,
+        },
+      },
+      readReceipts: { select: { userId: true, readAt: true } },
+      _count: { select: { readReceipts: true } },
+    },
+  });
+  return formatMessage(updatedMsg);
+}
+
+/**
  * Pin a message.
  */
 async function pinMessage(messageId) {
-  return prisma.message.update({
+  // First, find the message to get its groupId
+  const msg = await prisma.message.findUnique({
     where: { id: messageId },
-    data: { isPinned: true },
+    select: { groupId: true, isPinned: true },
   });
+  
+  if (!msg) throw Object.assign(new Error('Message not found.'), { statusCode: 404, code: 'MESSAGE_NOT_FOUND' });
+  
+  if (msg.isPinned) {
+    const existing = await prisma.message.findUnique({ where: { id: messageId } });
+    return { msg: formatMessage(existing), unpinnedIds: [] };
+  }
+
+  // Find all currently pinned messages in this group, ordered by oldest first
+  const pinnedMessages = await prisma.message.findMany({
+    where: { groupId: msg.groupId, isPinned: true, isDeleted: false },
+    orderBy: { pinnedAt: 'asc' }, // nulls first, then oldest Date
+    select: { id: true, pinnedAt: true, createdAt: true },
+  });
+  
+  // Sort robustly in javascript to handle nulls properly (fallback to createdAt)
+  pinnedMessages.sort((a, b) => {
+    const timeA = new Date(a.pinnedAt || a.createdAt).getTime();
+    const timeB = new Date(b.pinnedAt || b.createdAt).getTime();
+    return timeA - timeB;
+  });
+
+  const unpinnedIds = [];
+  // If there are 5 or more, unpin the oldest one(s) so that adding 1 keeps it at 5 max.
+  if (pinnedMessages.length >= 5) {
+    const toUnpin = pinnedMessages.slice(0, pinnedMessages.length - 4).map(m => m.id);
+    if (toUnpin.length > 0) {
+      await prisma.message.updateMany({
+        where: { id: { in: toUnpin } },
+        data: { isPinned: false, pinnedAt: null },
+      });
+      unpinnedIds.push(...toUnpin);
+    }
+  }
+
+  // Now pin the new one
+  const updatedMsg = await prisma.message.update({
+    where: { id: messageId },
+    data: { isPinned: true, pinnedAt: new Date() },
+    include: {
+      author: {
+        select: {
+          id: true, displayName: true, avatarUrl: true,
+          globalRing: true, displayBadges: true,
+        },
+      },
+    },
+  });
+  
+  return { msg: formatMessage(updatedMsg), unpinnedIds };
 }
 
 /**
@@ -134,7 +253,7 @@ async function pinMessage(messageId) {
 async function unpinMessage(messageId) {
   return prisma.message.update({
     where: { id: messageId },
-    data: { isPinned: false },
+    data: { isPinned: false, pinnedAt: null },
   });
 }
 
@@ -144,7 +263,7 @@ async function unpinMessage(messageId) {
 async function getPinnedMessages(groupId) {
   const messages = await prisma.message.findMany({
     where: { groupId, isPinned: true, isDeleted: false },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { pinnedAt: 'desc' },
     include: {
       author: {
         select: {
@@ -157,11 +276,85 @@ async function getPinnedMessages(groupId) {
   return messages.map(formatMessage);
 }
 
+// ============================================================
+// READ RECEIPTS
+// ============================================================
+
+/**
+ * Mark a single message as read by a user.
+ */
+async function markMessageRead(messageId, userId) {
+  return prisma.messageReadReceipt.upsert({
+    where: { messageId_userId: { messageId, userId } },
+    update: { readAt: new Date() },
+    create: { messageId, userId },
+  });
+}
+
+/**
+ * Mark all unread messages in a group as read for a user.
+ * Returns the count of newly-read messages.
+ */
+async function markGroupMessagesRead(groupId, userId) {
+  // Get all message IDs in this group that the user hasn't read yet
+  const unreadMessages = await prisma.message.findMany({
+    where: {
+      groupId,
+      isDeleted: false,
+      authorId: { not: userId },
+      readReceipts: {
+        none: { userId },
+      },
+    },
+    select: { id: true },
+  });
+
+  if (unreadMessages.length === 0) return { markedCount: 0 };
+
+  // Create read receipts in batch
+  const receipts = unreadMessages.map(m => ({
+    messageId: m.id,
+    userId,
+  }));
+
+  // Use createMany for efficiency (skipDuplicates is not supported on MongoDB)
+  try {
+    const result = await prisma.messageReadReceipt.createMany({
+      data: receipts,
+    });
+    return { markedCount: result.count };
+  } catch (err) {
+    // If a duplicate constraint error occurs during race conditions, just return 0
+    return { markedCount: 0 };
+  }
+}
+
+/**
+ * Get read receipts for a specific message.
+ */
+async function getReadReceipts(messageId) {
+  const receipts = await prisma.messageReadReceipt.findMany({
+    where: { messageId },
+    orderBy: { readAt: 'desc' },
+  });
+
+  const userIds = receipts.map(r => r.userId);
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, displayName: true, avatarUrl: true, username: true },
+  });
+
+  return receipts.map(r => ({
+    ...r,
+    user: users.find(u => u.id === r.userId),
+  }));
+}
+
 /**
  * Format a message for API response.
  */
-function formatMessage(msg) {
-  return {
+function formatMessage(msg, currentUserId = null) {
+  const base = {
     id: msg.id,
     groupId: msg.groupId,
     authorId: msg.authorId,
@@ -170,13 +363,38 @@ function formatMessage(msg) {
     attachments: msg.attachments || [],
     mentions: msg.mentions || [],
     isPinned: msg.isPinned,
+    pinnedAt: msg.pinnedAt || null,
     isDeleted: msg.isDeleted,
     createdAt: msg.createdAt,
     editedAt: msg.editedAt,
+    
+    // Extensions
+    replyToId: msg.replyToId || null,
+    reactions: msg.reactions || {},
+    forwarded: msg.forwarded || false,
+    msgType: msg.msgType || 'text',
+    fileUrl: msg.fileUrl || null,
+    fileName: msg.fileName || null,
+    fileSize: msg.fileSize || null,
+    mimetype: msg.mimetype || null,
   };
+
+  // Add read receipt summary if available
+  if (msg._count) {
+    base.readCount = msg._count.readReceipts || 0;
+  }
+  if (msg.readReceipts) {
+    base.readBy = msg.readReceipts.slice(0, 5).map(r => r.userId);
+    if (currentUserId) {
+      base.isReadByMe = msg.readReceipts.some(r => r.userId === currentUserId);
+    }
+  }
+
+  return base;
 }
 
 module.exports = {
   getMessages, getMessage, sendMessage, editMessage, deleteMessage,
-  pinMessage, unpinMessage, getPinnedMessages,
+  pinMessage, unpinMessage, getPinnedMessages, toggleReaction,
+  markMessageRead, markGroupMessagesRead, getReadReceipts,
 };

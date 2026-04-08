@@ -61,12 +61,12 @@ export function useSocket() {
     };
   }, [isAuthenticated]);
 
-  const sendMessage = useCallback((groupId, content, mentions = []) => {
+  const sendMessage = useCallback((groupId, content, mentions = [], replyToId, forwarded = false, msgType = 'text') => {
     return new Promise((resolve, reject) => {
       if (!socketRef.current?.connected) {
         return reject(new Error('Not connected'));
       }
-      socketRef.current.emit('message:send', { groupId, content, mentions }, (response) => {
+      socketRef.current.emit('message:send', { groupId, content, mentions, replyToId, forwarded, msgType }, (response) => {
         if (response?.error) reject(new Error(response.error));
         else resolve(response?.message);
       });
@@ -81,6 +81,36 @@ export function useSocket() {
     socketRef.current?.emit('typing:stop', { groupId });
   }, []);
 
+  /**
+   * Mark all messages in a group as read via socket.
+   */
+  const markRead = useCallback((groupId) => {
+    return new Promise((resolve, reject) => {
+      if (!socketRef.current?.connected) {
+        return reject(new Error('Not connected'));
+      }
+      socketRef.current.emit('message:read', { groupId }, (response) => {
+        if (response?.error) reject(new Error(response.error));
+        else resolve(response);
+      });
+    });
+  }, []);
+
+  /**
+   * Mark DMs as read via socket (notifies the other user in real-time).
+   */
+  const markDMRead = useCallback((userId) => {
+    return new Promise((resolve, reject) => {
+      if (!socketRef.current?.connected) {
+        return reject(new Error('Not connected'));
+      }
+      socketRef.current.emit('dm:read', { userId }, (response) => {
+        if (response?.error) reject(new Error(response.error));
+        else resolve(response);
+      });
+    });
+  }, []);
+
   const onEvent = useCallback((event, handler) => {
     socketRef.current?.on(event, handler);
     return () => socketRef.current?.off(event, handler);
@@ -92,6 +122,8 @@ export function useSocket() {
     sendMessage,
     startTyping,
     stopTyping,
+    markRead,
+    markDMRead,
     onEvent,
   };
 }

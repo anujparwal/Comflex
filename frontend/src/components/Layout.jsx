@@ -1,10 +1,14 @@
 /**
  * Layout — Main app layout with sidebar and top bar.
- * Wraps all authenticated pages.
+ * Wraps all authenticated pages. Shows unread badges on Groups nav.
+ * Refreshes unread counts on socket events and route changes.
  */
 
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useSocket } from '../hooks/useSocket';
+import { groupApi } from '../api/groupApi';
 
 const RING_LABELS = {
   0: { label: 'Admin', color: 'ring-badge-0' },
@@ -17,17 +21,61 @@ export default function Layout({ children }) {
   const { user, logout, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { connected, onEvent } = useSocket();
+  const [totalUnread, setTotalUnread] = useState(0);
+  const fetchTimeoutRef = useRef(null);
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
 
+  // Debounced fetch to avoid rapid re-fetching
+  const fetchUnread = useCallback(async () => {
+    try {
+      const res = await groupApi.listGroups();
+      const groups = res.data.data || [];
+      const total = groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0);
+      setTotalUnread(total);
+    } catch {}
+  }, []);
+
+  const debouncedFetchUnread = useCallback(() => {
+    clearTimeout(fetchTimeoutRef.current);
+    fetchTimeoutRef.current = setTimeout(fetchUnread, 300);
+  }, [fetchUnread]);
+
+  // Fetch on mount + polling interval
+  useEffect(() => {
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(fetchTimeoutRef.current);
+    };
+  }, [fetchUnread]);
+
+  // Re-fetch when navigating (e.g. back from chat page after reading messages)
+  useEffect(() => {
+    debouncedFetchUnread();
+  }, [location.pathname, debouncedFetchUnread]);
+
+  // Listen to socket events that affect unread counts
+  useEffect(() => {
+    if (!connected || !onEvent) return;
+    const cleanups = [
+      onEvent('message:new', debouncedFetchUnread),
+      onEvent('message:readUpdate', debouncedFetchUnread),
+      onEvent('message:delete', debouncedFetchUnread),
+    ];
+    return () => cleanups.forEach(fn => fn?.());
+  }, [connected, onEvent, debouncedFetchUnread]);
+
   const ringInfo = RING_LABELS[user?.globalRing] || RING_LABELS[3];
 
   const navItems = [
     { path: '/profile', label: 'Profile', icon: '👤' },
-    { path: '/groups', label: 'Groups', icon: '💬' },
+    { path: '/groups', label: 'Groups', icon: '💬', badge: totalUnread },
     { path: '/friends', label: 'Friends', icon: '👥' },
     { path: '/messages', label: 'Messages', icon: '✉️' },
     ...(isAdmin ? [{ path: '/admin', label: 'Admin Dashboard', icon: '⚙️' }] : []),
@@ -50,13 +98,18 @@ export default function Layout({ children }) {
               key={item.path}
               to={item.path}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                location.pathname === item.path
+                location.pathname === item.path || location.pathname.startsWith(item.path + '/')
                   ? 'chip-accent'
                   : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]'
               }`}
             >
               <span className="text-lg">{item.icon}</span>
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.badge > 0 && (
+                <span className="bg-[var(--color-danger)] text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 font-bold animate-pulse">
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              )}
             </Link>
           ))}
         </nav>

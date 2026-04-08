@@ -194,6 +194,21 @@ textarea:focus {
 .ring-badge-2 { background: var(--color-ring-2); }
 .ring-badge-3 { background: var(--color-ring-3); }
 
+/* @Mention chip in messages */
+.mention-chip {
+  display: inline;
+  background: rgba(108, 99, 255, 0.2);
+  color: var(--color-accent-light);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: inherit;
+  transition: background 0.15s ease;
+}
+.mention-chip:hover {
+  background: rgba(108, 99, 255, 0.35);
+}
+
 /* Fade-in animation */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
