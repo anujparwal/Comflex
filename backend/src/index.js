@@ -23,6 +23,7 @@ const systemRoutes = require('./routes/system');
 const groupRoutes = require('./routes/groups');
 const friendRoutes = require('./routes/friends');
 const dmRoutes = require('./routes/dm');
+const eventRoutes = require('./routes/events');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -58,6 +59,7 @@ app.use('/api/v1/system', systemRoutes);
 app.use('/api/v1/groups', groupRoutes);
 app.use('/api/v1/friends', friendRoutes);
 app.use('/api/v1/dm', dmRoutes);
+app.use('/api/v1/events', eventRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

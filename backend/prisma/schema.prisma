@@ -42,6 +42,7 @@ model User {
 
   // Admin-delegated permissions
   canCreateGroups       Boolean  @default(false)
+  canCreateEvents       Boolean  @default(false)
 
   // Session & security tokens
   refreshToken     String?  // hashed refresh token
@@ -54,6 +55,13 @@ model User {
   // Relations
   groupMemberships GroupMember[]
   messages         Message[]
+
+  // Event Relations
+  eventsCreated     Event[]            @relation("EventCreator")
+  eventRoles        EventOrganizer[]
+  teamsLed          EventTeam[]        @relation("TeamLeader")
+  eventMemberships  EventTeamMember[]
+  eventTeamInvites  EventTeamInvite[]
 }
 
 // ============================================================
@@ -224,4 +232,96 @@ model DirectMessage {
   isDeleted  Boolean   @default(false)
   createdAt  DateTime  @default(now())
   editedAt   DateTime?
+}
+
+// ============================================================
+// EVENT MANAGEMENT
+// ============================================================
+model Event {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  title           String
+  description     String?
+  startDate       DateTime
+  endDate         DateTime?
+  status          String   @default("draft") // draft, published, ongoing, completed
+  category        String   // app, web, cybersec, etc
+  targetTags      String[] // e.g. ["cohort-28", "branch-cs", "cohort-28-cs"]
+  creatorId       String   @db.ObjectId
+  
+  // Subevent logic
+  parentId        String?  @db.ObjectId
+  keepTeamsSame   Boolean  @default(false)
+
+  // Team configurations
+  isTeamEvent     Boolean  @default(false)
+  minTeamSize     Int      @default(1)
+  maxTeamSize     Int      @default(1)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  creator         User             @relation("EventCreator", fields: [creatorId], references: [id])
+  parentEvent     Event?           @relation("SubEvents", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subEvents       Event[]          @relation("SubEvents")
+  organizers      EventOrganizer[]
+  teams           EventTeam[]
+  teamInvites     EventTeamInvite[]
+}
+
+model EventOrganizer {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String   @db.ObjectId
+  userId      String   @db.ObjectId
+  ring        Int      @default(2) // 0=Creator, 1=Co-organizer, 2=Volunteer
+  permissions Json?    // { canEditDetails, canCreateSubevents, canManageTeams, canAwardPoints, canManageRoles, canGiveNextPhaseAccess }
+  
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model EventTeam {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String   @db.ObjectId
+  name        String
+  leaderId    String   @db.ObjectId
+  status      String   @default("pending") // pending, registered, qualified_for_next_phase
+  points      Int      @default(0)         // For leaderboard/awarding points
+  
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  leader      User     @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+  members     EventTeamMember[]
+  invites     EventTeamInvite[]
+
+  @@unique([eventId, name])
+}
+
+model EventTeamMember {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  teamId      String   @db.ObjectId
+  userId      String   @db.ObjectId
+  joinedAt    DateTime @default(now())
+  
+  team        EventTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model EventTeamInvite {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  teamId         String   @db.ObjectId
+  eventId        String   @db.ObjectId
+  invitedUserId  String   @db.ObjectId
+  invitedBy      String   @db.ObjectId
+  status         String   @default("pending") // pending, accepted, rejected
+  createdAt      DateTime @default(now())
+
+  team           EventTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  invitedUser    User      @relation(fields: [invitedUserId], references: [id], onDelete: Cascade)
+  event          Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, invitedUserId])
 }

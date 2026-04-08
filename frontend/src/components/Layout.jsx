@@ -78,6 +78,8 @@ export default function Layout({ children }) {
     { path: '/groups', label: 'Groups', icon: '💬', badge: totalUnread },
     { path: '/friends', label: 'Friends', icon: '👥' },
     { path: '/messages', label: 'Messages', icon: '✉️' },
+    { path: '/events', label: 'Events', icon: '📅' },
+    ...(user?.globalRing <= 1 || user?.canCreateEvents ? [{ path: '/manage-events', label: 'Manage Events', icon: '📝' }] : []),
     ...(isAdmin ? [{ path: '/admin', label: 'Admin Dashboard', icon: '⚙️' }] : []),
   ];
 

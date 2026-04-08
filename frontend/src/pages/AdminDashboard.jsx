@@ -649,6 +649,15 @@ function UsersTab() {
     }
   };
 
+  const handleToggleCreateEvents = async (userId, current) => {
+    try {
+      await adminApi.setUserPermissions(userId, { canCreateEvents: !current });
+      fetchUsers(pagination.page);
+    } catch (err) {
+      alert(err.response?.data?.error?.message || 'Failed to update permissions.');
+    }
+  };
+
   const handleDeleteUser = async (userId, displayName) => {
     if (!confirm(`⚠️ Permanently delete "${displayName}"?\n\nThis will remove their account, messages, group memberships, friendships, and DMs. This cannot be undone.`)) return;
     try {
@@ -730,17 +739,30 @@ function UsersTab() {
               </div>
 
               {/* Can create groups badge */}
-              <button
-                onClick={() => handleToggleCreateGroups(u.id, u.canCreateGroups)}
-                className={`text-xs px-2 py-1 rounded-lg transition-colors flex-shrink-0 ${
-                  u.canCreateGroups
-                    ? 'chip-accent border border-[rgba(16,185,129,0.3)]'
-                    : 'bg-[var(--color-bg-card)] text-[var(--color-text-muted)] border border-[var(--color-border)]'
-                }`}
-                title={u.canCreateGroups ? 'Click to revoke group creation' : 'Click to grant group creation'}
-              >
-                {u.canCreateGroups ? '✅ Can Create Groups' : '📋 No Group Create'}
-              </button>
+              <div className="flex gap-1 flex-shrink-0">
+                <button
+                  onClick={() => handleToggleCreateGroups(u.id, u.canCreateGroups)}
+                  className={`text-[10px] px-2 py-1 rounded-lg transition-colors flex-shrink-0 ${
+                    u.canCreateGroups
+                      ? 'chip-accent border border-[rgba(16,185,129,0.3)]'
+                      : 'bg-[var(--color-bg-card)] text-[var(--color-text-muted)] border border-[var(--color-border)]'
+                  }`}
+                  title={u.canCreateGroups ? 'Click to revoke group creation' : 'Click to grant group creation'}
+                >
+                  {u.canCreateGroups ? '✅ Groups' : '🚫 Groups'}
+                </button>
+                <button
+                  onClick={() => handleToggleCreateEvents(u.id, u.canCreateEvents)}
+                  className={`text-[10px] px-2 py-1 rounded-lg transition-colors flex-shrink-0 ${
+                    u.canCreateEvents
+                      ? 'chip-accent border border-[rgba(16,185,129,0.3)]'
+                      : 'bg-[var(--color-bg-card)] text-[var(--color-text-muted)] border border-[var(--color-border)]'
+                  }`}
+                  title={u.canCreateEvents ? 'Click to revoke event creation' : 'Click to grant event creation'}
+                >
+                  {u.canCreateEvents ? '✅ Events' : '🚫 Events'}
+                </button>
+              </div>
 
               {/* Ring selector */}
               <select
