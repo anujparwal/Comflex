@@ -51,20 +51,45 @@ Comflex requires MongoDB with **replica set** enabled (required for Prisma trans
 <details>
 <summary><strong>🐧 Linux</strong></summary>
 
+**Ubuntu/Debian-based:**
 ```bash
 # Install MongoDB Community Edition
-# (Ubuntu/Debian — see https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/)
 sudo apt-get install -y gnupg curl
 curl -fsSL https://www.mongodb.com/static/pgp/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
 echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
 sudo apt-get update && sudo apt-get install -y mongodb-org
+```
 
+**Fedora-based:**
+```bash
+# Create the repository file
+cat <<EOF | sudo tee /etc/yum.repos.d/mongodb-org-7.0.repo
+[mongodb-org-7.0]
+name=MongoDB Repository
+baseurl=https://repo.mongodb.org/yum/redhat/9/mongodb-org/7.0/x86_64/
+gpgcheck=1
+enabled=1
+gpgkey=https://www.mongodb.com/static/pgp/server-7.0.asc
+EOF
+
+# Install MongoDB
+sudo dnf install -y mongodb-org
+```
+
+**Arch-based:**
+```bash
+# Install MongoDB Community Edition via AUR (using yay as an example)
+yay -S mongodb-bin mongodb-tools-bin
+```
+
+**Configuration (All Linux Distributions):**
+```bash
 # Enable replica set: add to /etc/mongod.conf
 # replication:
 #   replSetName: rs0
 
-# Restart and initialize
-sudo systemctl restart mongod
+# Enable, start, and initialize
+sudo systemctl enable --now mongod
 mongosh --eval "rs.initiate()"
 ```
 </details>
