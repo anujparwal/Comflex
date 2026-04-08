@@ -288,6 +288,7 @@ function CohortTab() {
 // ============================================================
 function GroupsTab() {
   const [groups, setGroups] = useState([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', displayName: '', description: '', type: 'custom' });
@@ -379,13 +380,17 @@ function GroupsTab() {
           <span className="text-sm text-[var(--color-text-muted)]">{groups.length} groups</span>
         </div>
 
+        {/* Search */}
+        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name..." className="mb-4 w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--color-accent)]" />
+
         {loading ? (
           <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="skeleton h-14 w-full" />)}</div>
         ) : groups.length === 0 ? (
           <p className="text-center text-[var(--color-text-muted)] py-6">No groups yet.</p>
         ) : (
           <div className="space-y-2">
-            {groups.map(g => (
+            {groups.filter(g => (g.displayName || g.name || '').toLowerCase().includes(search.toLowerCase())).map(g => (
               <div key={g.id} className="flex items-center gap-4 p-3 rounded-xl bg-[var(--color-bg-primary)] border border-[var(--color-border)]">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-light)] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                   {(g.displayName || g.name)?.charAt(0)?.toUpperCase()}

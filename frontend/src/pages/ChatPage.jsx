@@ -47,6 +47,7 @@ export default function ChatPage() {
   // Modals for forwarding
   const [forwardingMsg, setForwardingMsg] = useState(null);
   const [allGroups, setAllGroups] = useState([]);
+  const [forwardSearch, setForwardSearch] = useState('');
   
   // Pinned Messages state
   const [currentPinnedIndex, setCurrentPinnedIndex] = useState(0);
@@ -688,11 +689,18 @@ export default function ChatPage() {
                 <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg p-3 text-sm text-[var(--color-text-secondary)] mb-4 saturate-50">
                    {forwardingMsg.content || '[Media]'}
                 </div>
+                <input 
+                  type="text" 
+                  placeholder="Search groups..." 
+                  value={forwardSearch} 
+                  onChange={(e) => setForwardSearch(e.target.value)} 
+                  className="w-full mb-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--color-accent)]" 
+                />
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {allGroups.filter(g => g.id !== groupId).length === 0 && (
+                  {allGroups.filter(g => g.id !== groupId && (g.displayName || g.name || '').toLowerCase().includes(forwardSearch.toLowerCase())).length === 0 && (
                     <p className="text-xs text-[var(--color-text-muted)]">No other active groups found.</p>
                   )}
-                  {allGroups.filter(g => g.id !== groupId).map(g => (
+                  {allGroups.filter(g => g.id !== groupId && (g.displayName || g.name || '').toLowerCase().includes(forwardSearch.toLowerCase())).map(g => (
                     <div key={g.id} className="flex items-center justify-between p-2 rounded hover:bg-[var(--color-bg-secondary)] border border-transparent hover:border-[var(--color-border)]">
                       <span className="text-sm">{g.displayName}</span>
                       <button onClick={() => submitForward(g.id)} className="btn btn-primary py-1 px-3 text-xs">Send</button>
