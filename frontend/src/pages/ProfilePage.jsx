@@ -9,6 +9,7 @@ import { useAuth } from '../hooks/useAuth';
 import { userApi } from '../api/userApi';
 import { parseIIITLEmail } from '../utils/parseEmail';
 import Layout from '../components/Layout';
+import Avatar from '../components/Avatar';
 
 const RING_LABELS = ['Admin', 'Manager', 'Elevated Member', 'Member'];
 
@@ -110,13 +111,11 @@ export default function ProfilePage() {
         <div className="glass-card p-6 mb-6">
           <div className="flex items-center gap-6">
             <div className="relative group">
-              {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt="" className="w-24 h-24 rounded-full object-cover border-2 border-[var(--color-border)]" />
-              ) : (
-                <div className="w-24 h-24 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-white text-3xl font-bold">
-                  {user.displayName?.charAt(0)?.toUpperCase() || '?'}
-                </div>
-              )}
+              <Avatar 
+                src={user.avatarUrl} 
+                name={user.displayName} 
+                className="w-24 h-24 rounded-full object-cover border-2 border-[var(--color-border)]" 
+              />
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingAvatar}

@@ -29,7 +29,7 @@ export default function RegisterPage() {
         navigate('/profile');
       }
     } catch (err) {
-      const msg = err.response?.data?.message || 'Registration failed. Make sure you use your college email.';
+      const msg = err.response?.data?.error?.message || err.response?.data?.message || 'Registration failed. Make sure you use your college email.';
       setError(msg);
     } finally {
       setLoading(false);

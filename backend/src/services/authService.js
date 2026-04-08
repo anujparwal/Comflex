@@ -93,7 +93,7 @@ async function googleLogin(idToken) {
   const googleUser = await verifyGoogleToken(idToken);
 
   // Look up user by googleId first, then by email
-  let user = await prisma.user.findUnique({ where: { googleId: googleUser.googleId } });
+  let user = await prisma.user.findFirst({ where: { googleId: googleUser.googleId } });
   let isNewUser = false;
 
   if (!user) {
