@@ -18,6 +18,7 @@ export default function MessagesPage() {
   const { connected, markDMRead, onEvent } = useSocket();
 
   const [conversations, setConversations] = useState([]);
+  const [search, setSearch] = useState('');
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -144,6 +145,13 @@ export default function MessagesPage() {
         <div className="w-80 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-bg-secondary)]">
           <div className="p-4 border-b border-[var(--color-border)]">
             <h2 className="text-lg font-bold">Messages</h2>
+            <input 
+              type="text" 
+              placeholder="Search conversations..." 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)} 
+              className="w-full mt-3 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--color-accent)]" 
+            />
           </div>
           <div className="flex-1 overflow-y-auto">
             {conversations.length === 0 && (
@@ -152,7 +160,7 @@ export default function MessagesPage() {
                 Send a message from your Friends page!
               </p>
             )}
-            {conversations.map(conv => (
+            {conversations.filter(c => (c.partner?.displayName || c.partner?.username || '').toLowerCase().includes(search.toLowerCase())).map(conv => (
               <button
                 key={conv.partner?.id}
                 onClick={() => navigate(`/messages/${conv.partner?.id}`)}

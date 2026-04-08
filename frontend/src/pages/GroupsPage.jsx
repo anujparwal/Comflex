@@ -16,6 +16,7 @@ const TYPE_LABELS = { primary: '🎓 Cohort', 'cross-year': '🔗 Cross-Year', c
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState([]);
+  const [search, setSearch] = useState('');
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -62,7 +63,7 @@ export default function GroupsPage() {
   return (
     <Layout>
       <div className="max-w-3xl mx-auto fade-in">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Groups</h1>
           <div className="flex items-center gap-3">
             {isAdmin && (
@@ -76,6 +77,14 @@ export default function GroupsPage() {
             <span className="text-sm text-[var(--color-text-muted)]">{groups.length} groups</span>
           </div>
         </div>
+
+        <input 
+          type="text" 
+          placeholder="Search groups by name..." 
+          value={search} 
+          onChange={(e) => setSearch(e.target.value)} 
+          className="w-full mb-6 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[var(--color-accent)]" 
+        />
 
         {/* Pending Invites */}
         {invites.length > 0 && (
@@ -136,7 +145,7 @@ export default function GroupsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {groups.map((group) => (
+            {groups.filter(g => (g.displayName || g.name || '').toLowerCase().includes(search.toLowerCase())).map((group) => (
               <Link
                 key={group.id}
                 to={`/groups/${group.id}`}
