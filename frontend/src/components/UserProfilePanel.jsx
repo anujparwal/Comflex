@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { userApi } from '../api/userApi';
 import { friendApi } from '../api/friendApi';
+import Avatar from './Avatar';
 
 const RING_LABELS = ['Admin', 'Manager', 'Elevated', 'Member'];
 
@@ -78,13 +79,11 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
         <div className="p-5 space-y-5">
           {/* Avatar & Name */}
           <div className="text-center">
-            {profile.avatarUrl ? (
-              <img src={profile.avatarUrl} alt="" className="w-20 h-20 rounded-full object-cover mx-auto border-2 border-[var(--color-border)]" />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-light)] flex items-center justify-center text-white text-2xl font-bold mx-auto">
-                {profile.displayName?.charAt(0)?.toUpperCase() || '?'}
-              </div>
-            )}
+            <Avatar 
+              src={profile.avatarUrl} 
+              name={profile.displayName} 
+              className="w-20 h-20 rounded-full mx-auto border-2 border-[var(--color-border)]" 
+            />
             <h3 className="text-lg font-bold mt-3">{profile.displayName}</h3>
             {profile.username && (
               <p className="text-sm text-[var(--color-text-muted)]">@{profile.username}</p>
