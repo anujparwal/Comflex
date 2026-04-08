@@ -277,6 +277,12 @@ exports.listTeams = async (req, res, next) => {
           include: {
             user: { select: { id: true, displayName: true, avatarUrl: true } }
           }
+        },
+        invites: {
+          include: {
+            invitedUser: { select: { id: true, displayName: true, avatarUrl: true } },
+            invitedBy: true
+          }
         }
       }
     });
