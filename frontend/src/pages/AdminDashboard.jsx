@@ -7,7 +7,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { adminApi } from '../api/adminApi';
-import { groupApi } from '../api/groupApi';
 import Layout from '../components/Layout';
 
 const RING_LABELS = ['Admin', 'Manager', 'Elevated', 'Member', 'Restricted'];
@@ -28,6 +27,7 @@ export default function AdminDashboard() {
             { key: 'groups', label: '📋 Groups' },
             { key: 'autojoin', label: '🔗 Auto-Join' },
             { key: 'users', label: '👥 Users' },
+            { key: 'database', label: '💾 Database' },
           ].map((t) => (
             <button
               key={t.key}
@@ -48,6 +48,7 @@ export default function AdminDashboard() {
         {tab === 'groups' && <GroupsTab />}
         {tab === 'autojoin' && <AutoJoinTab />}
         {tab === 'users' && <UsersTab />}
+        {tab === 'database' && <DatabaseTab />}
       </div>
     </Layout>
   );
@@ -884,6 +885,76 @@ function CreateTestUserForm({ onCreated }) {
         className="btn btn-primary">
         {creating ? <span className="spinner" /> : 'Create Test User'}
       </button>
+    </div>
+  );
+}
+
+// ============================================================
+// Database Tab — Backup and Clear functions
+// ============================================================
+function DatabaseTab() {
+  const [loadingBackup, setLoadingBackup] = useState(false);
+  const [loadingClear, setLoadingClear] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const handleBackup = async () => {
+    setLoadingBackup(true);
+    setMessage('');
+    try {
+      const res = await adminApi.backupDatabase();
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'comflex-backup.json');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      setMessage('Backup downloaded successfully.');
+    } catch {
+      setMessage('Failed to create backup.');
+    } finally {
+      setLoadingBackup(false);
+    }
+  };
+
+  const handleClear = async () => {
+    if (!window.confirm('⚠️ DANGER: Are you absolutely sure you want to clear the entire database?\n\nThis will permanently delete all users (except yourself), groups, messages, and events. This CANNOT BE UNDONE. Make sure you take a backup first!')) return;
+    
+    setLoadingClear(true);
+    setMessage('');
+    try {
+      const res = await adminApi.clearDatabase();
+      setMessage(res.data?.data?.message || 'Database successfully cleared.');
+      window.alert('Database cleared successfully.');
+    } catch (err) {
+      setMessage(err.response?.data?.error?.message || 'Failed to clear database.');
+    } finally {
+      setLoadingClear(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="glass-card p-6 space-y-4">
+        <h3 className="text-lg font-semibold">Database Management</h3>
+        {message && <div className={`text-sm ${message.includes('Failed') ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}`}>{message}</div>}
+        
+        <div className="p-4 rounded-xl bg-[var(--color-bg-primary)] border border-[var(--color-border)]">
+          <h4 className="font-semibold mb-1">Backup Database</h4>
+          <p className="text-sm text-[var(--color-text-muted)] mb-3">Download a full JSON dump of all records (users, groups, messages, events, etc) in the Prisma schema.</p>
+          <button onClick={handleBackup} disabled={loadingBackup} className="btn btn-secondary text-sm">
+            {loadingBackup ? <span className="spinner" /> : '📥 Download Backup'}
+          </button>
+        </div>
+
+        <div className="p-4 rounded-xl bg-[rgba(239,68,68,0.05)] border border-[rgba(239,68,68,0.3)]">
+          <h4 className="font-semibold text-red-500 mb-1">Clear Database</h4>
+          <p className="text-sm text-[var(--color-text-muted)] mb-3">Permanently delete all non-essential data. Your admin account and the core institution configuration will be preserved.</p>
+          <button onClick={handleClear} disabled={loadingClear} className="btn border border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white transition-colors text-sm">
+            {loadingClear ? <span className="spinner" /> : '🛑 Clear All Data'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

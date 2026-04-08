@@ -59,4 +59,10 @@ export const adminApi = {
     client.delete(`/admin/users/${id}`),
   createTestUser: (data) =>
     client.post('/admin/users/create-test', data),
+
+  // Database Management
+  backupDatabase: () =>
+    client.get('/admin/database/backup', { responseType: 'blob' }),
+  clearDatabase: () =>
+    client.delete('/admin/database/clear'),
 };
