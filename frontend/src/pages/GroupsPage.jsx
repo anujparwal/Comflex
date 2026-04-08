@@ -1,35 +1,63 @@
 /**
  * GroupsPage — Lists all groups the user belongs to.
- * Admin (Ring 0) sees ALL groups on the platform.
- *
- * Clicking a group navigates to the ChatPage for that group.
+ * Shows unread badges, group avatars, and "Create Group" button.
+ * Shows pending group invites.
  */
 
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { groupApi } from '../api/groupApi';
 import { adminApi } from '../api/adminApi';
 import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/Layout';
+import CreateGroupModal from '../components/CreateGroupModal';
 
-const TYPE_LABELS = { primary: '🎓 Cohort', 'cross-year': '🔗 Cross-Year' };
+const TYPE_LABELS = { primary: '🎓 Cohort', 'cross-year': '🔗 Cross-Year', custom: '✨ Custom' };
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState([]);
+  const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isAdmin = user?.globalRing === 0;
 
-  useEffect(() => {
-    const fetchGroups = isAdmin
-      ? adminApi.listAllGroups().then((res) => res.data.data)
-      : groupApi.listGroups().then((res) => res.data.data);
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const groupsFetch = isAdmin
+        ? adminApi.listAllGroups().then((res) => res.data.data)
+        : groupApi.listGroups().then((res) => res.data.data);
+      const [groupsData, invitesRes] = await Promise.all([
+        groupsFetch,
+        groupApi.listMyInvites().catch(() => ({ data: { data: [] } })),
+      ]);
+      setGroups(groupsData || []);
+      setInvites(invitesRes?.data?.data || invitesRes || []);
+    } catch {}
+    setLoading(false);
+  };
 
-    fetchGroups
-      .then((data) => setGroups(data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [isAdmin]);
+  useEffect(() => { fetchData(); }, [isAdmin]);
+
+  const handleAcceptInvite = async (groupId, inviteId) => {
+    try {
+      await groupApi.acceptInvite(groupId, inviteId);
+      fetchData();
+    } catch (err) {
+      alert(err.response?.data?.error?.message || 'Failed to accept invite.');
+    }
+  };
+
+  const handleRejectInvite = async (groupId, inviteId) => {
+    try {
+      await groupApi.rejectInvite(groupId, inviteId);
+      setInvites(prev => prev.filter(i => i.id !== inviteId));
+    } catch (err) {
+      alert(err.response?.data?.error?.message || 'Failed to reject invite.');
+    }
+  };
 
   return (
     <Layout>
@@ -42,9 +70,54 @@ export default function GroupsPage() {
                 Admin View — All Groups
               </span>
             )}
+            <button onClick={() => setShowCreate(true)} className="btn btn-primary text-sm px-4 py-2">
+              + Create Group
+            </button>
             <span className="text-sm text-[var(--color-text-muted)]">{groups.length} groups</span>
           </div>
         </div>
+
+        {/* Pending Invites */}
+        {invites.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-3">
+              📩 Pending Invites ({invites.length})
+            </h2>
+            <div className="space-y-2">
+              {invites.map(inv => (
+                <div key={inv.id} className="glass-card p-4 flex items-center gap-4 border border-[var(--color-warning)] border-opacity-30">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--color-warning)] to-[var(--color-accent)] flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
+                    {inv.group?.avatarUrl ? (
+                      <img src={inv.group.avatarUrl} alt="" className="w-full h-full rounded-xl object-cover" />
+                    ) : (
+                      inv.group?.displayName?.charAt(0) || '#'
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold truncate">{inv.group?.displayName || inv.group?.name}</h3>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      Invited by {inv.invitedByUser?.displayName} · {inv.group?.memberCount} members
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAcceptInvite(inv.groupId, inv.id)}
+                      className="btn btn-primary text-xs px-3 py-1.5"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => handleRejectInvite(inv.groupId, inv.id)}
+                      className="btn btn-secondary text-xs px-3 py-1.5"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="space-y-3">
@@ -54,9 +127,12 @@ export default function GroupsPage() {
           <div className="glass-card p-8 text-center">
             <div className="text-5xl mb-4">📭</div>
             <h2 className="text-lg font-semibold mb-2">No Groups Yet</h2>
-            <p className="text-[var(--color-text-secondary)] text-sm">
-              You&apos;ll be automatically added to groups when cohort tagging processes your email.
+            <p className="text-[var(--color-text-secondary)] text-sm mb-4">
+              Create a group to start chatting with your friends!
             </p>
+            <button onClick={() => setShowCreate(true)} className="btn btn-primary">
+              Create Your First Group
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -67,9 +143,13 @@ export default function GroupsPage() {
                 className="glass-card p-4 flex items-center gap-4 hover:border-[var(--color-accent)] border border-transparent transition-all"
               >
                 {/* Group avatar */}
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-light)] flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
-                  {group.displayName?.charAt(0) || group.name?.charAt(0)?.toUpperCase() || '#'}
-                </div>
+                {group.avatarUrl ? (
+                  <img src={group.avatarUrl} alt="" className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-accent-light)] flex items-center justify-center text-white text-lg font-bold flex-shrink-0">
+                    {group.displayName?.charAt(0) || group.name?.charAt(0)?.toUpperCase() || '#'}
+                  </div>
+                )}
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
@@ -89,6 +169,13 @@ export default function GroupsPage() {
                   </div>
                 </div>
 
+                {/* Unread badge */}
+                {group.unreadCount > 0 && (
+                  <span className="bg-[var(--color-danger)] text-white text-xs rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5 font-bold">
+                    {group.unreadCount > 99 ? '99+' : group.unreadCount}
+                  </span>
+                )}
+
                 {/* Ring badge */}
                 {isAdmin ? (
                   <span className="px-2.5 py-1 rounded-full text-xs text-white bg-[var(--color-accent)]">
@@ -104,7 +191,16 @@ export default function GroupsPage() {
           </div>
         )}
       </div>
+
+      {showCreate && (
+        <CreateGroupModal
+          onClose={() => setShowCreate(false)}
+          onCreated={(group) => {
+            fetchData();
+            if (group?.id) navigate(`/groups/${group.id}`);
+          }}
+        />
+      )}
     </Layout>
   );
 }
-

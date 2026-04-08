@@ -2,14 +2,45 @@
  * Group Service
  *
  * Business logic for group CRUD, membership management,
- * ring/permission changes, and mute/unmute operations.
+ * ring/permission changes, mute/unmute, and group invites.
  */
 
 const prisma = require('../prisma');
 const { canActOnUser } = require('../middleware/ringCheck');
 
+// Full admin permissions object
+const ADMIN_PERMISSIONS = {
+  can_send_messages: true, can_delete_own_messages: true,
+  can_delete_others_messages: true, can_mute_members: true,
+  can_kick_members: true, can_add_members: true, can_tag_members: true,
+  can_manage_economy: true, can_create_events: true, can_pin_messages: true,
+  can_manage_roles: true, can_edit_group_info: true, can_stop_others_tagging: true,
+};
+
+const ELEVATED_PERMISSIONS = {
+  can_send_messages: true, can_delete_own_messages: true,
+  can_delete_others_messages: true, can_mute_members: true,
+  can_kick_members: true, can_add_members: true, can_tag_members: true,
+  can_manage_economy: false, can_create_events: false, can_pin_messages: true,
+  can_manage_roles: false, can_edit_group_info: false, can_stop_others_tagging: true,
+};
+
+const MEMBER_PERMISSIONS = {
+  can_send_messages: true, can_delete_own_messages: true,
+  can_delete_others_messages: false, can_mute_members: false,
+  can_kick_members: false, can_add_members: false, can_tag_members: true,
+  can_manage_economy: false, can_create_events: false, can_pin_messages: false,
+  can_manage_roles: false, can_edit_group_info: false, can_stop_others_tagging: false,
+};
+
+function getDefaultPermissions(ring) {
+  if (ring === 0) return { ...ADMIN_PERMISSIONS };
+  if (ring <= 2) return { ...ELEVATED_PERMISSIONS };
+  return { ...MEMBER_PERMISSIONS };
+}
+
 /**
- * List all groups the user belongs to.
+ * List all groups the user belongs to, with unread counts.
  */
 async function listUserGroups(userId) {
   const memberships = await prisma.groupMember.findMany({
@@ -22,12 +53,64 @@ async function listUserGroups(userId) {
     orderBy: { joinedAt: 'desc' },
   });
 
+  // Get unread counts for each group
+  const groupIds = memberships.map(m => m.groupId);
+  const unreadCounts = await getUnreadCountsBatch(userId, groupIds);
+
   return memberships.map((m) => ({
     ...m.group,
     memberCount: m.group._count.members,
     userRing: m.ring,
     userPermissions: m.permissions,
+    unreadCount: unreadCounts[m.groupId] || 0,
   }));
+}
+
+/**
+ * Get unread counts for multiple groups at once.
+ */
+async function getUnreadCountsBatch(userId, groupIds) {
+  const counts = {};
+  for (const gid of groupIds) {
+    counts[gid] = await getUnreadCount(gid, userId);
+  }
+  return counts;
+}
+
+/**
+ * Get unread message count for a user in a group.
+ * A message is "unread" if the user has no read receipt for it,
+ * it was sent after the user joined, and the user is not the author.
+ */
+async function getUnreadCount(groupId, userId) {
+  const membership = await prisma.groupMember.findUnique({
+    where: { userId_groupId: { userId, groupId } },
+  });
+  if (!membership) return 0;
+
+  // Count messages the user hasn't read (not authored by them, not deleted)
+  const totalMessages = await prisma.message.count({
+    where: {
+      groupId,
+      authorId: { not: userId },
+      isDeleted: false,
+      createdAt: { gte: membership.joinedAt },
+    },
+  });
+
+  const readMessages = await prisma.messageReadReceipt.count({
+    where: {
+      userId,
+      message: {
+        groupId,
+        authorId: { not: userId },
+        isDeleted: false,
+        createdAt: { gte: membership.joinedAt },
+      },
+    },
+  });
+
+  return Math.max(0, totalMessages - readMessages);
 }
 
 /**
@@ -43,15 +126,30 @@ async function getGroup(groupId) {
 }
 
 /**
- * Create a new group.
+ * Create a new group. Any authenticated user can create.
+ * Creator is automatically added as Ring 0 admin.
  */
-async function createGroup({ name, displayName, description, type = 'primary' }) {
+async function createGroup({ name, displayName, description, type = 'custom', creatorId, avatarUrl }) {
   const existing = await prisma.cohortGroup.findUnique({ where: { name } });
   if (existing) throw Object.assign(new Error('A group with this name already exists.'), { statusCode: 409, code: 'DUPLICATE_GROUP' });
 
-  return prisma.cohortGroup.create({
-    data: { name, displayName, description, type },
+  const group = await prisma.cohortGroup.create({
+    data: { name, displayName, description, type, creatorId, avatarUrl },
   });
+
+  // Auto-add creator as Ring 0 admin with full permissions
+  if (creatorId) {
+    await prisma.groupMember.create({
+      data: {
+        userId: creatorId,
+        groupId: group.id,
+        ring: 0,
+        permissions: ADMIN_PERMISSIONS,
+      },
+    });
+  }
+
+  return group;
 }
 
 /**
@@ -62,6 +160,7 @@ async function updateGroup(groupId, updates) {
   if (updates.displayName !== undefined) allowed.displayName = updates.displayName;
   if (updates.description !== undefined) allowed.description = updates.description;
   if (updates.avatarUrl !== undefined) allowed.avatarUrl = updates.avatarUrl;
+  if (updates.ringConfig !== undefined) allowed.ringConfig = updates.ringConfig;
 
   return prisma.cohortGroup.update({ where: { id: groupId }, data: allowed });
 }
@@ -82,7 +181,7 @@ async function listMembers(groupId) {
     include: {
       user: {
         select: {
-          id: true, email: true, displayName: true, avatarUrl: true,
+          id: true, email: true, displayName: true, username: true, avatarUrl: true,
           globalRing: true, cohortTags: true, displayBadges: true, cfHandle: true, cfRating: true,
         },
       },
@@ -90,11 +189,15 @@ async function listMembers(groupId) {
     orderBy: { ring: 'asc' },
   });
 
+  // Get group to check creatorId
+  const group = await prisma.cohortGroup.findUnique({ where: { id: groupId }, select: { creatorId: true } });
+
   return members.map((m) => ({
     ...m.user,
     groupRing: m.ring,
     permissions: m.permissions,
     joinedAt: m.joinedAt,
+    isCreator: group?.creatorId === m.userId,
   }));
 }
 
@@ -110,39 +213,65 @@ async function getMembership(groupId, userId) {
 }
 
 /**
- * Add a member to a group with default Ring 3 permissions.
+ * Check if two users are friends.
  */
-async function addMember(groupId, userId, ring = 3) {
+async function areFriends(userId1, userId2) {
+  const friendship = await prisma.friendship.findFirst({
+    where: {
+      status: 'accepted',
+      OR: [
+        { requesterId: userId1, addresseeId: userId2 },
+        { requesterId: userId2, addresseeId: userId1 },
+      ],
+    },
+  });
+  return !!friendship;
+}
+
+/**
+ * Add a member to a group.
+ * If the target is a friend of the adder, add directly.
+ * If not a friend, create a group invite instead.
+ */
+async function addMember(groupId, userId, addedByUserId, ringInput) {
   const existing = await prisma.groupMember.findUnique({
     where: { userId_groupId: { userId, groupId } },
   });
   if (existing) throw Object.assign(new Error('User is already a member.'), { statusCode: 409, code: 'ALREADY_MEMBER' });
 
-  const defaultPermissions = ring <= 2
-    ? {
-        can_send_messages: true, can_delete_own_messages: true,
-        can_delete_others_messages: true, can_mute_members: true,
-        can_kick_members: true, can_add_members: true, can_tag_members: true,
-        can_manage_economy: false, can_create_events: false, can_pin_messages: true,
-        can_manage_roles: false, can_edit_group_info: false, can_stop_others_tagging: true,
-      }
-    : {
-        can_send_messages: true, can_delete_own_messages: true,
-        can_delete_others_messages: false, can_mute_members: false,
-        can_kick_members: false, can_add_members: false, can_tag_members: true,
-        can_manage_economy: false, can_create_events: false, can_pin_messages: false,
-        can_manage_roles: false, can_edit_group_info: false, can_stop_others_tagging: false,
-      };
+  // Check friendship (skip for system/admin additions where addedByUserId is null)
+  if (addedByUserId && addedByUserId !== userId) {
+    const friends = await areFriends(addedByUserId, userId);
+    if (!friends) {
+      // Create an invite instead of adding directly
+      return createInvite(groupId, userId, addedByUserId);
+    }
+  }
 
-  return prisma.groupMember.create({
-    data: { userId, groupId, ring, permissions: defaultPermissions },
+  // Get default joining ring
+  const groupInfo = await prisma.cohortGroup.findUnique({ where: { id: groupId }, select: { ringConfig: true } });
+  const defaultRingSetting = groupInfo?.ringConfig?.defaultRing !== undefined ? groupInfo.ringConfig.defaultRing : 3;
+  const computedRing = ringInput !== undefined ? ringInput : defaultRingSetting;
+
+  const permissions = getDefaultPermissions(computedRing);
+
+  const member = await prisma.groupMember.create({
+    data: { userId, groupId, ring: computedRing, permissions },
   });
+
+  return { ...member, invited: false };
 }
 
 /**
  * Remove (kick) a member from a group.
  */
 async function removeMember(groupId, userId) {
+  // Prevent kicking the group creator
+  const group = await prisma.cohortGroup.findUnique({ where: { id: groupId }, select: { creatorId: true } });
+  if (group?.creatorId === userId) {
+    throw Object.assign(new Error('Cannot remove the group creator.'), { statusCode: 403, code: 'CANNOT_REMOVE_CREATOR' });
+  }
+
   await prisma.groupMember.delete({
     where: { userId_groupId: { userId, groupId } },
   });
@@ -158,17 +287,27 @@ async function getMemberRing(groupId, userId) {
 
 /**
  * Set a member's ring in a group. Enforces ring hierarchy.
+ * Cannot demote the group creator.
  */
 async function setMemberRing(groupId, actorRing, targetUserId, newRing) {
   const target = await getMembership(groupId, targetUserId);
+
+  // Protect group creator from demotion
+  const group = await prisma.cohortGroup.findUnique({ where: { id: groupId }, select: { creatorId: true } });
+  if (group?.creatorId === targetUserId && newRing > target.ring) {
+    throw Object.assign(new Error('Cannot demote the group creator.'), { statusCode: 403, code: 'CANNOT_DEMOTE_CREATOR' });
+  }
 
   if (!canActOnUser(actorRing, target.ring)) {
     throw Object.assign(new Error('Cannot modify ring of a user at your level or above.'), { statusCode: 403, code: 'RING_VIOLATION' });
   }
 
+  // Update permissions to match new ring level
+  const permissions = getDefaultPermissions(newRing);
+
   return prisma.groupMember.update({
     where: { userId_groupId: { userId: targetUserId, groupId } },
-    data: { ring: newRing },
+    data: { ring: newRing, permissions },
   });
 }
 
@@ -182,9 +321,16 @@ async function getMemberPermissions(groupId, userId) {
 
 /**
  * Set a member's permissions.
+ * Cannot modify permissions of the group creator.
  */
 async function setMemberPermissions(groupId, actorRing, targetUserId, permissions) {
   const target = await getMembership(groupId, targetUserId);
+
+  // Protect group creator
+  const group = await prisma.cohortGroup.findUnique({ where: { id: groupId }, select: { creatorId: true } });
+  if (group?.creatorId === targetUserId) {
+    throw Object.assign(new Error('Cannot modify permissions of the group creator.'), { statusCode: 403, code: 'CANNOT_MODIFY_CREATOR' });
+  }
 
   if (!canActOnUser(actorRing, target.ring)) {
     throw Object.assign(new Error('Cannot modify permissions of a user at your level or above.'), { statusCode: 403, code: 'RING_VIOLATION' });
@@ -195,6 +341,187 @@ async function setMemberPermissions(groupId, actorRing, targetUserId, permission
     data: { permissions },
   });
 }
+
+// ============================================================
+// GROUP INVITES
+// ============================================================
+
+/**
+ * Create a group invite for a non-friend user.
+ */
+async function createInvite(groupId, userId, invitedBy) {
+  // Check if user exists
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw Object.assign(new Error('User not found.'), { statusCode: 404, code: 'USER_NOT_FOUND' });
+
+  // Check if already a member
+  const existing = await prisma.groupMember.findUnique({
+    where: { userId_groupId: { userId, groupId } },
+  });
+  if (existing) throw Object.assign(new Error('User is already a member.'), { statusCode: 409, code: 'ALREADY_MEMBER' });
+
+  // Upsert invite
+  const invite = await prisma.groupInvite.upsert({
+    where: { groupId_userId: { groupId, userId } },
+    update: { invitedBy, status: 'pending' },
+    create: { groupId, userId, invitedBy, status: 'pending' },
+  });
+
+  return { ...invite, invited: true };
+}
+
+/**
+ * Accept a group invite. Only the invited user can accept.
+ */
+async function acceptInvite(inviteId, userId) {
+  const invite = await prisma.groupInvite.findUnique({ where: { id: inviteId } });
+  if (!invite) throw Object.assign(new Error('Invite not found.'), { statusCode: 404, code: 'INVITE_NOT_FOUND' });
+  if (invite.userId !== userId) {
+    throw Object.assign(new Error('Only the invited user can accept this invite.'), { statusCode: 403, code: 'NOT_INVITED_USER' });
+  }
+  if (invite.status !== 'pending') {
+    throw Object.assign(new Error('This invite is no longer pending.'), { statusCode: 400, code: 'NOT_PENDING' });
+  }
+
+  // Update invite status
+  await prisma.groupInvite.update({
+    where: { id: inviteId },
+    data: { status: 'accepted' },
+  });
+
+  const groupInfo = await prisma.cohortGroup.findUnique({ where: { id: invite.groupId }, select: { ringConfig: true } });
+  const joinRing = groupInfo?.ringConfig?.defaultRing !== undefined ? groupInfo.ringConfig.defaultRing : 3;
+
+  // Add user as member
+  const permissions = getDefaultPermissions(joinRing);
+  const member = await prisma.groupMember.create({
+    data: { userId, groupId: invite.groupId, ring: joinRing, permissions },
+  });
+
+  return member;
+}
+
+/**
+ * Reject a group invite.
+ */
+async function rejectInvite(inviteId, userId) {
+  const invite = await prisma.groupInvite.findUnique({ where: { id: inviteId } });
+  if (!invite) throw Object.assign(new Error('Invite not found.'), { statusCode: 404, code: 'INVITE_NOT_FOUND' });
+  if (invite.userId !== userId) {
+    throw Object.assign(new Error('Only the invited user can reject this invite.'), { statusCode: 403, code: 'NOT_INVITED_USER' });
+  }
+
+  await prisma.groupInvite.update({
+    where: { id: inviteId },
+    data: { status: 'rejected' },
+  });
+
+  return { message: 'Invite rejected.' };
+}
+
+/**
+ * List pending invites for a group (admin view).
+ */
+async function listGroupInvites(groupId) {
+  const invites = await prisma.groupInvite.findMany({
+    where: { groupId, status: 'pending' },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const userIds = [...new Set([...invites.map(i => i.userId), ...invites.map(i => i.invitedBy)])];
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, displayName: true, username: true, avatarUrl: true },
+  });
+
+  return invites.map(inv => ({
+    ...inv,
+    user: users.find(u => u.id === inv.userId),
+    invitedByUser: users.find(u => u.id === inv.invitedBy),
+  }));
+}
+
+/**
+ * List pending invites for a user (their incoming invites).
+ */
+async function listUserInvites(userId) {
+  const invites = await prisma.groupInvite.findMany({
+    where: { userId, status: 'pending' },
+    include: {
+      group: {
+        include: { _count: { select: { members: true } } },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const inviterIds = invites.map(i => i.invitedBy);
+  const inviters = await prisma.user.findMany({
+    where: { id: { in: inviterIds } },
+    select: { id: true, displayName: true, username: true, avatarUrl: true },
+  });
+
+  return invites.map(inv => ({
+    ...inv,
+    invitedByUser: inviters.find(u => u.id === inv.invitedBy),
+    group: {
+      ...inv.group,
+      memberCount: inv.group._count.members,
+    },
+  }));
+}
+
+// ============================================================
+// RING CONFIGURATION
+// ============================================================
+
+/**
+ * Update ring configuration for a group.
+ * Validates ringCount (2-10) and ringLabels format.
+ */
+async function updateRingConfig(groupId, config) {
+  const { ringCount = 5, ringLabels = {}, ringPermissions = {}, defaultRing } = config;
+  const clampedCount = Math.max(2, Math.min(10, parseInt(ringCount) || 5));
+  
+  let safeDefaultRing = parseInt(defaultRing);
+  if (isNaN(safeDefaultRing) || safeDefaultRing < 0 || safeDefaultRing >= clampedCount) {
+    safeDefaultRing = clampedCount - 1; // Default to lowest ring tier if invalid
+  }
+
+  // Clean labels & permissions: only keep entries within range
+  const cleanLabels = {};
+  const cleanPermissions = {};
+  for (let i = 0; i < clampedCount; i++) {
+    cleanLabels[i] = ringLabels[i] || getDefaultRingLabel(i);
+    // Sanitize permissions object for this ring to only hold booleans for valid keys
+    const rawPerms = ringPermissions[i] || {};
+    const sanitized = {};
+    for (const key of Object.keys(rawPerms)) {
+      sanitized[key] = !!rawPerms[key];
+    }
+    cleanPermissions[i] = sanitized;
+  }
+
+  const ringConfig = { 
+    ringCount: clampedCount, 
+    ringLabels: cleanLabels, 
+    ringPermissions: cleanPermissions,
+    defaultRing: safeDefaultRing 
+  };
+  return prisma.cohortGroup.update({
+    where: { id: groupId },
+    data: { ringConfig },
+  });
+}
+
+function getDefaultRingLabel(ring) {
+  const defaults = ['Admin', 'Manager', 'Elevated', 'Member', 'Restricted'];
+  return defaults[ring] || `Ring ${ring}`;
+}
+
+// ============================================================
+// MUTE / UNMUTE
+// ============================================================
 
 /**
  * Mute a member in a group for a given duration.
@@ -238,5 +565,7 @@ module.exports = {
   listUserGroups, getGroup, createGroup, updateGroup, deleteGroup,
   listMembers, getMembership, addMember, removeMember,
   getMemberRing, setMemberRing, getMemberPermissions, setMemberPermissions,
-  muteMember, unmuteMember, isMuted,
+  muteMember, unmuteMember, isMuted, getUnreadCount,
+  createInvite, acceptInvite, rejectInvite, listGroupInvites, listUserInvites,
+  areFriends, getDefaultPermissions, updateRingConfig,
 };

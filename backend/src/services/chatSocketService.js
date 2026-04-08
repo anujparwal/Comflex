@@ -2,7 +2,7 @@
  * Chat Socket Service — Socket.IO WebSocket Server
  *
  * Handles real-time messaging: send/receive group messages, DMs,
- * typing indicators, and moderation events.
+ * typing indicators, read receipts, and moderation events.
  *
  * Authentication: JWT verification on handshake.
  * Rooms: each group ID is a Socket.IO room, each user has a personal room (user:<id>).
@@ -75,8 +75,8 @@ function initSocket(httpServer, frontendUrl) {
     // ── message:send (group messages) ─────────────────────
     socket.on('message:send', async (data, callback) => {
       try {
-        const { groupId, content, mentions = [], attachments = [] } = data;
-        if (!groupId || !content?.trim()) {
+        const { groupId, content, mentions = [], attachments = [], replyToId, forwarded, msgType } = data;
+        if (!groupId || (!content?.trim() && !attachments.length)) {
           return callback?.({ error: 'groupId and content are required.' });
         }
 
@@ -101,9 +101,12 @@ function initSocket(httpServer, frontendUrl) {
         }
 
         const msg = await messageService.sendMessage(groupId, socket.user.id, {
-          content: content.trim(),
+          content: content?.trim() || '',
           mentions,
           attachments,
+          replyToId,
+          forwarded,
+          msgType
         });
 
         // Broadcast to room
@@ -111,6 +114,31 @@ function initSocket(httpServer, frontendUrl) {
         callback?.({ success: true, message: msg });
       } catch (err) {
         console.error('[WS] message:send error:', err.message);
+        callback?.({ error: err.message });
+      }
+    });
+
+    // ── message:read (mark group messages as read) ────────
+    socket.on('message:read', async (data, callback) => {
+      try {
+        const { groupId } = data;
+        if (!groupId) {
+          return callback?.({ error: 'groupId is required.' });
+        }
+
+        const result = await messageService.markGroupMessagesRead(groupId, socket.user.id);
+
+        // Broadcast read update to the group so others see read receipts update
+        socket.to(groupId).emit('message:readUpdate', {
+          userId: socket.user.id,
+          displayName: socket.user.displayName,
+          groupId,
+          markedCount: result.markedCount,
+        });
+
+        callback?.({ success: true, ...result });
+      } catch (err) {
+        console.error('[WS] message:read error:', err.message);
         callback?.({ error: err.message });
       }
     });
@@ -158,6 +186,29 @@ function initSocket(httpServer, frontendUrl) {
         callback?.({ success: true, message });
       } catch (err) {
         console.error('[WS] dm:send error:', err.message);
+        callback?.({ error: err.message });
+      }
+    });
+
+    // ── dm:read — Mark DMs as read and notify sender ─────
+    socket.on('dm:read', async (data, callback) => {
+      try {
+        const { userId: otherUserId } = data;
+        if (!otherUserId) {
+          return callback?.({ error: 'userId is required.' });
+        }
+
+        await dmService.markAsRead(socket.user.id, otherUserId);
+
+        // Notify the other user that their messages were read
+        io.to(`user:${otherUserId}`).emit('dm:readUpdate', {
+          readByUserId: socket.user.id,
+          readAt: new Date().toISOString(),
+        });
+
+        callback?.({ success: true });
+      } catch (err) {
+        console.error('[WS] dm:read error:', err.message);
         callback?.({ error: err.message });
       }
     });

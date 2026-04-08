@@ -84,12 +84,15 @@ model CohortGroup {
   description String?          // group description
   avatarUrl   String?          // group avatar image
   type        String           // "primary" | "cross-year" | "custom"
+  creatorId   String?  @db.ObjectId // User who created the group (null for system-created)
+  ringConfig  Json?            // { ringCount: 5, ringLabels: { 0: "Admin", 1: "Manager", ... } }
   createdAt   DateTime @default(now())
 
   // Relations
-  members GroupMember[]
-  mutes   MuteRecord[]
+  members  GroupMember[]
+  mutes    MuteRecord[]
   messages Message[]
+  invites  GroupInvite[]
 }
 
 // ============================================================
@@ -114,6 +117,23 @@ model GroupMember {
 }
 
 // ============================================================
+// GROUP INVITE — Join request for non-friend users
+// ============================================================
+model GroupInvite {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  groupId   String   @db.ObjectId
+  userId    String   @db.ObjectId  // the invited user
+  invitedBy String   @db.ObjectId  // who invited them
+  status    String   @default("pending") // "pending" | "accepted" | "rejected"
+  createdAt DateTime @default(now())
+
+  // Relations
+  group CohortGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+// ============================================================
 // MESSAGE — Chat message in a group
 // ============================================================
 model Message {
@@ -125,12 +145,38 @@ model Message {
   mentions    String[] @default([])
   isPinned    Boolean  @default(false)
   isDeleted   Boolean  @default(false)
+  
+  // Chat Actions & Multimedia
+  replyToId   String?  @db.ObjectId
+  reactions   Json?    
+  forwarded   Boolean  @default(false)
+  msgType     String   @default("text") // text, image, document, sticker
+  fileUrl     String?
+  fileName    String?
+  fileSize    Int?
+  mimetype    String?
   createdAt   DateTime @default(now())
   editedAt    DateTime?
 
   // Relations
-  group  CohortGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  author User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  group        CohortGroup        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author       User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  readReceipts MessageReadReceipt[]
+}
+
+// ============================================================
+// MESSAGE READ RECEIPT — Tracks who has read which group message
+// ============================================================
+model MessageReadReceipt {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  messageId String   @db.ObjectId
+  userId    String   @db.ObjectId
+  readAt    DateTime @default(now())
+
+  // Relations
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
 }
 
 // ============================================================
@@ -168,12 +214,13 @@ model Friendship {
 // DIRECT MESSAGE — 1-on-1 messages between friends
 // ============================================================
 model DirectMessage {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  senderId   String   @db.ObjectId
-  receiverId String   @db.ObjectId
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  senderId   String    @db.ObjectId
+  receiverId String    @db.ObjectId
   content    String
-  isRead     Boolean  @default(false)
-  isDeleted  Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  isRead     Boolean   @default(false)
+  readAt     DateTime?            // When the message was read
+  isDeleted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
   editedAt   DateTime?
 }

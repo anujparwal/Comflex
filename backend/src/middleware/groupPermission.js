@@ -31,6 +31,7 @@ async function requireGroupMember(req, res, next) {
 
     const membership = await prisma.groupMember.findUnique({
       where: { userId_groupId: { userId: req.user.id, groupId } },
+      include: { group: { select: { ringConfig: true, creatorId: true } } },
     });
 
     if (!membership) {
@@ -58,8 +59,13 @@ function requireGroupPermission(permissionKey) {
       return error(res, 'NOT_A_MEMBER', 'You are not a member of this group.', 403);
     }
 
-    const perms = membership.permissions || {};
-    if (!perms[permissionKey]) {
+    // Evaluate permissions: merge member specific + ring specific
+    const memberPerms = membership.permissions || {};
+    const ringPerms = membership.group?.ringConfig?.ringPermissions?.[membership.groupRing] || {};
+    // A permission is true if AT LEAST one of the memberPerms or ringPerms is true
+    const hasPermission = memberPerms[permissionKey] === true || ringPerms[permissionKey] === true;
+
+    if (!hasPermission && membership.group?.creatorId !== req.user.id) {
       return error(res, 'PERMISSION_DENIED', `You do not have the "${permissionKey}" permission in this group.`, 403);
     }
 

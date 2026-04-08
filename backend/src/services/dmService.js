@@ -158,7 +158,7 @@ async function markAsRead(userId, otherUserId) {
       receiverId: userId,
       isRead: false,
     },
-    data: { isRead: true },
+    data: { isRead: true, readAt: new Date() },
   });
 
   return { message: 'Messages marked as read.' };

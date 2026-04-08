@@ -1,8 +1,8 @@
 /**
- * GroupSidebar — Group members list with moderation controls.
+ * GroupSidebar — Group members list with moderation controls and search.
  *
  * Shows members sorted by ring, with mute/kick/ring change controls
- * for users with appropriate permissions.
+ * for users with appropriate permissions. Includes a member search/filter.
  */
 
 import { useState, useEffect } from 'react';
@@ -14,6 +14,7 @@ const RING_COLORS = ['var(--color-danger)', 'var(--color-warning)', 'var(--color
 export default function GroupSidebar({ groupId, userPermissions = {}, currentUserId, isAdmin }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!groupId) return;
@@ -52,6 +53,13 @@ export default function GroupSidebar({ groupId, userPermissions = {}, currentUse
     }
   };
 
+  const filteredMembers = search.trim()
+    ? members.filter(m =>
+        m.displayName?.toLowerCase().includes(search.toLowerCase()) ||
+        m.username?.toLowerCase().includes(search.toLowerCase())
+      )
+    : members;
+
   if (loading) {
     return (
       <div className="space-y-2 p-4">
@@ -66,42 +74,55 @@ export default function GroupSidebar({ groupId, userPermissions = {}, currentUse
         Members — {members.length}
       </h3>
 
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="🔍 Search..."
+        className="w-full bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[var(--color-accent)] mb-3"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+      />
+
       <div className="space-y-1">
-        {members.map((m) => (
-          <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors group">
-            {/* Avatar */}
-            {m.avatarUrl ? (
-              <img src={m.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
-            ) : (
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                style={{ backgroundColor: RING_COLORS[Math.min(m.groupRing, 4)] }}
-              >
-                {m.displayName?.charAt(0)?.toUpperCase()}
-              </div>
-            )}
+        {filteredMembers.length === 0 ? (
+          <p className="text-xs text-[var(--color-text-muted)] text-center py-2">No members found.</p>
+        ) : (
+          filteredMembers.map((m) => (
+            <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors group">
+              {/* Avatar */}
+              {m.avatarUrl ? (
+                <img src={m.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+              ) : (
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                  style={{ backgroundColor: RING_COLORS[Math.min(m.groupRing, 4)] }}
+                >
+                  {m.displayName?.charAt(0)?.toUpperCase()}
+                </div>
+              )}
 
-            {/* Name + Ring */}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{m.displayName}</p>
-              <p className="text-xs" style={{ color: RING_COLORS[Math.min(m.groupRing, 4)] }}>
-                {RING_LABELS[m.groupRing] || `Ring ${m.groupRing}`}
-              </p>
+              {/* Name + Ring */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{m.displayName}</p>
+                <p className="text-xs" style={{ color: RING_COLORS[Math.min(m.groupRing, 4)] }}>
+                  {RING_LABELS[m.groupRing] || `Ring ${m.groupRing}`}
+                </p>
+              </div>
+
+              {/* Moderation controls */}
+              {m.id !== currentUserId && (
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {(userPermissions.can_mute_members || isAdmin) && (
+                    <button onClick={() => handleMute(m.id)} className="text-xs p-1 hover:text-[var(--color-warning)]" title="Mute">🔇</button>
+                  )}
+                  {(userPermissions.can_kick_members || isAdmin) && (
+                    <button onClick={() => handleKick(m.id)} className="text-xs p-1 hover:text-[var(--color-danger)]" title="Kick">🚫</button>
+                  )}
+                </div>
+              )}
             </div>
-
-            {/* Moderation controls */}
-            {m.id !== currentUserId && (
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                {(userPermissions.can_mute_members || isAdmin) && (
-                  <button onClick={() => handleMute(m.id)} className="text-xs p-1 hover:text-[var(--color-warning)]" title="Mute">🔇</button>
-                )}
-                {(userPermissions.can_kick_members || isAdmin) && (
-                  <button onClick={() => handleKick(m.id)} className="text-xs p-1 hover:text-[var(--color-danger)]" title="Kick">🚫</button>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );
