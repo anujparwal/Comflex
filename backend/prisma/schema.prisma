@@ -31,7 +31,7 @@ model User {
   displayBadges  String[] // badge IDs currently displayed (max 5)
 
   // Google OAuth fields
-  googleId              String?  @unique  // Google OAuth sub ID
+  googleId              String?  //@unique  // Google OAuth sub ID
   hasPassword           Boolean  @default(true) // false for Google-only accounts until password set
 
   // Personal email verification
@@ -144,6 +144,7 @@ model Message {
   attachments String[] @default([])
   mentions    String[] @default([])
   isPinned    Boolean  @default(false)
+  pinnedAt    DateTime?
   isDeleted   Boolean  @default(false)
   
   // Chat Actions & Multimedia

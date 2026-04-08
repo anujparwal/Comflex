@@ -47,6 +47,9 @@ export default function ChatPage() {
   // Modals for forwarding
   const [forwardingMsg, setForwardingMsg] = useState(null);
   const [allGroups, setAllGroups] = useState([]);
+  
+  // Pinned Messages state
+  const [currentPinnedIndex, setCurrentPinnedIndex] = useState(0);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -66,6 +69,24 @@ export default function ChatPage() {
       ))
       .slice(0, 8);
   }, [members, mentionQuery, user?.id]);
+
+  // Handle pinned messages (top 5, newest first)
+  const pinnedMessages = useMemo(() => {
+    return messages
+      .filter(m => m.isPinned)
+      .sort((a, b) => {
+        const timeA = new Date(a.pinnedAt || a.createdAt).getTime();
+        const timeB = new Date(b.pinnedAt || b.createdAt).getTime();
+        return timeB - timeA; // newest first
+      })
+      .slice(0, 5);
+  }, [messages]);
+
+  useEffect(() => {
+    if (pinnedMessages.length > 0 && currentPinnedIndex >= pinnedMessages.length) {
+      setCurrentPinnedIndex(0);
+    }
+  }, [pinnedMessages.length, currentPinnedIndex]);
 
   // Load group info, messages, and members
   useEffect(() => {
@@ -157,6 +178,16 @@ export default function ChatPage() {
       onEvent('message:react', ({ messageId, reactions, groupId: gid }) => {
         // Technically message:react emission might not have groupId if we didn't send it, but we only subbed here so it's fine.
         setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, reactions } : m));
+      }),
+      onEvent('message:pinnedUpdate', ({ pinnedMsg, unpinnedIds }) => {
+        setMessages((prev) => prev.map((m) => {
+          if (m.id === pinnedMsg.id) return { ...m, ...pinnedMsg }; 
+          if (unpinnedIds && unpinnedIds.includes(m.id)) return { ...m, isPinned: false };
+          return m;
+        }));
+      }),
+      onEvent('message:unpinned', ({ messageId }) => {
+        setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, isPinned: false } : m));
       }),
     ];
 
@@ -269,6 +300,12 @@ export default function ChatPage() {
     setSending(true);
     stopTyping(groupId);
 
+    // Provide instant UI feedback and allow typing the next message immediately
+    setMessageInput('');
+    setReplyingTo(null);
+    setPendingMentions([]);
+    setShowMentionPopup(false);
+
     // Extract mention user IDs
     const mentionIds = pendingMentions
       .filter(m => content.includes(`@${m.displayName}`))
@@ -284,7 +321,10 @@ export default function ChatPage() {
         formData.append('attachment', fileAttachment);
 
         const res = await groupApi.sendMessage(groupId, formData);
-        setMessages((prev) => [...prev, res.data.data]);
+        setMessages((prev) => {
+          if (prev.some(m => m.id === res.data.data.id)) return prev;
+          return [...prev, res.data.data];
+        });
         
         // Reset file
         setFileAttachment(null);
@@ -292,32 +332,40 @@ export default function ChatPage() {
       } else {
         // Standard payload via WebSocket or REST
         if (connected) {
-          await wsSendMessage(groupId, content, mentionIds, replyingTo?.id);
+          const newMsg = await wsSendMessage(groupId, content, mentionIds, replyingTo?.id);
+          if (newMsg) {
+            setMessages((prev) => {
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+          }
         } else {
           const res = await groupApi.sendMessage(groupId, { 
             content, 
             mentions: mentionIds, 
             replyToId: replyingTo?.id 
           });
-          setMessages((prev) => [...prev, res.data.data]);
+          setMessages((prev) => {
+            if (prev.some(m => m.id === res.data.data.id)) return prev;
+            return [...prev, res.data.data];
+          });
         }
       }
 
-      setMessageInput('');
-      setReplyingTo(null);
-      setPendingMentions([]);
-      setShowMentionPopup(false);
     } catch (err) {
       alert(err.message || err.response?.data?.error?.message || 'Failed to send message.');
+      // Optionally restore input on failure if it was empty, though complex to merge if they started typing.
     } finally {
       setSending(false);
+      setTimeout(() => inputRef.current?.focus(), 0);
     }
   };
 
   const handleReact = async (msgId, emoji) => {
     try {
-      await groupApi.reactToMessage(groupId, msgId, emoji);
-      // Let the socket handle the rest updates
+      const res = await groupApi.reactToMessage(groupId, msgId, emoji);
+      // Optimistically update the UI in case socket event is missed
+      setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, reactions: res.data.data.reactions } : m));
     } catch (err) {
       // alert on error?
     }
@@ -374,9 +422,18 @@ export default function ChatPage() {
   // Pin/unpin
   const handlePin = async (msgId, shouldPin) => {
     try {
-      if (shouldPin) await groupApi.pinMessage(groupId, msgId);
-      else await groupApi.unpinMessage(groupId, msgId);
-      setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, isPinned: shouldPin } : m));
+      if (shouldPin) {
+        const res = await groupApi.pinMessage(groupId, msgId);
+        const { msg, unpinnedIds } = res.data.data;
+        setMessages((prev) => prev.map((m) => {
+           if (m.id === msg.id) return { ...m, isPinned: true };
+           if (unpinnedIds && unpinnedIds.includes(m.id)) return { ...m, isPinned: false };
+           return m;
+        }));
+      } else {
+        await groupApi.unpinMessage(groupId, msgId);
+        setMessages((prev) => prev.map((m) => m.id === msgId ? { ...m, isPinned: false } : m));
+      }
     } catch (err) {
       alert(err.response?.data?.error?.message || 'Failed to pin/unpin.');
     }
@@ -443,6 +500,49 @@ export default function ChatPage() {
         <div className="flex gap-4 flex-1 min-h-0">
           {/* Chat panel */}
           <div className="flex-1 flex flex-col glass-card overflow-hidden">
+            {/* Pinned Message Banner */}
+            {pinnedMessages.length > 0 && (
+              <div 
+                className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] p-2 px-4 flex items-center justify-between text-sm shadow-sm z-10 cursor-pointer hover:bg-[var(--color-bg-secondary)] transition-colors"
+                onClick={() => {
+                  const targetId = pinnedMessages[currentPinnedIndex]?.id;
+                  if (targetId) {
+                    const el = document.getElementById(`msg-${targetId}`);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      el.classList.add('bg-[var(--color-accent)]/20');
+                      setTimeout(() => el.classList.remove('bg-[var(--color-accent)]/20'), 1500);
+                    }
+                  }
+                  if (pinnedMessages.length > 1) {
+                    setCurrentPinnedIndex((prev) => (prev + 1) % pinnedMessages.length);
+                  }
+                }}
+              >
+                <div className="flex items-center gap-3 overflow-hidden whitespace-nowrap w-full">
+                  {pinnedMessages.length > 1 && (
+                    <div className="flex flex-col gap-0.5 mt-0.5 h-full justify-center">
+                      {pinnedMessages.map((_, idx) => (
+                        <div key={idx} className={`w-1 h-1 rounded-full ${idx === currentPinnedIndex ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-text-muted)]/40'}`} />
+                      ))}
+                    </div>
+                  )}
+                  <span>📌</span>
+                  <span className="font-semibold text-[var(--color-accent)] whitespace-nowrap">Pinned:</span>
+                  <div className="flex-1 overflow-hidden relative h-5">
+                    {pinnedMessages.map((pm, idx) => (
+                      <span 
+                        key={pm.id} 
+                        className={`absolute left-0 top-0 w-full truncate transition-opacity duration-300 ${idx === currentPinnedIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
+                      >
+                        {pm.content || 'Media Message'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
               {messages.length === 0 ? (
@@ -566,7 +666,6 @@ export default function ChatPage() {
                 onKeyDown={handleInputKeyDown}
                 placeholder="Type a message... (@ to mention)"
                 className="flex-1 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[var(--color-accent)]"
-                disabled={sending}
               />
               <button
                 type="submit"

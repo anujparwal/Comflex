@@ -190,10 +190,61 @@ async function toggleReaction(messageId, userId, emoji) {
  * Pin a message.
  */
 async function pinMessage(messageId) {
-  return prisma.message.update({
+  // First, find the message to get its groupId
+  const msg = await prisma.message.findUnique({
     where: { id: messageId },
-    data: { isPinned: true },
+    select: { groupId: true, isPinned: true },
   });
+  
+  if (!msg) throw Object.assign(new Error('Message not found.'), { statusCode: 404, code: 'MESSAGE_NOT_FOUND' });
+  
+  if (msg.isPinned) {
+    const existing = await prisma.message.findUnique({ where: { id: messageId } });
+    return { msg: formatMessage(existing), unpinnedIds: [] };
+  }
+
+  // Find all currently pinned messages in this group, ordered by oldest first
+  const pinnedMessages = await prisma.message.findMany({
+    where: { groupId: msg.groupId, isPinned: true, isDeleted: false },
+    orderBy: { pinnedAt: 'asc' }, // nulls first, then oldest Date
+    select: { id: true, pinnedAt: true, createdAt: true },
+  });
+  
+  // Sort robustly in javascript to handle nulls properly (fallback to createdAt)
+  pinnedMessages.sort((a, b) => {
+    const timeA = new Date(a.pinnedAt || a.createdAt).getTime();
+    const timeB = new Date(b.pinnedAt || b.createdAt).getTime();
+    return timeA - timeB;
+  });
+
+  const unpinnedIds = [];
+  // If there are 5 or more, unpin the oldest one(s) so that adding 1 keeps it at 5 max.
+  if (pinnedMessages.length >= 5) {
+    const toUnpin = pinnedMessages.slice(0, pinnedMessages.length - 4).map(m => m.id);
+    if (toUnpin.length > 0) {
+      await prisma.message.updateMany({
+        where: { id: { in: toUnpin } },
+        data: { isPinned: false, pinnedAt: null },
+      });
+      unpinnedIds.push(...toUnpin);
+    }
+  }
+
+  // Now pin the new one
+  const updatedMsg = await prisma.message.update({
+    where: { id: messageId },
+    data: { isPinned: true, pinnedAt: new Date() },
+    include: {
+      author: {
+        select: {
+          id: true, displayName: true, avatarUrl: true,
+          globalRing: true, displayBadges: true,
+        },
+      },
+    },
+  });
+  
+  return { msg: formatMessage(updatedMsg), unpinnedIds };
 }
 
 /**
@@ -202,7 +253,7 @@ async function pinMessage(messageId) {
 async function unpinMessage(messageId) {
   return prisma.message.update({
     where: { id: messageId },
-    data: { isPinned: false },
+    data: { isPinned: false, pinnedAt: null },
   });
 }
 
@@ -212,7 +263,7 @@ async function unpinMessage(messageId) {
 async function getPinnedMessages(groupId) {
   const messages = await prisma.message.findMany({
     where: { groupId, isPinned: true, isDeleted: false },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { pinnedAt: 'desc' },
     include: {
       author: {
         select: {
@@ -312,6 +363,7 @@ function formatMessage(msg, currentUserId = null) {
     attachments: msg.attachments || [],
     mentions: msg.mentions || [],
     isPinned: msg.isPinned,
+    pinnedAt: msg.pinnedAt || null,
     isDeleted: msg.isDeleted,
     createdAt: msg.createdAt,
     editedAt: msg.editedAt,

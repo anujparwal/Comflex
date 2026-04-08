@@ -127,7 +127,7 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
   }, [message.content, message.isDeleted, mentionData, onUserClick]);
 
   return (
-    <div className={`flex gap-3 p-3 rounded-xl transition-colors hover:bg-[var(--color-bg-secondary)] group ${message.isDeleted ? 'opacity-50' : ''}`}>
+    <div id={`msg-${message.id}`} className={`flex gap-3 p-3 rounded-xl transition-colors hover:bg-[var(--color-bg-secondary)] group ${message.isDeleted ? 'opacity-50' : 'transition-all duration-500'}`}>
       {/* Avatar */}
       <div className="flex-shrink-0 cursor-pointer" onClick={handleAuthorClick}>
         {author.avatarUrl ? (
@@ -231,24 +231,7 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
           </div>
         )}
 
-        {/* Reaction Strip */}
-        {message.reactions && Object.keys(message.reactions).length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {Object.entries(message.reactions).map(([emoji, users]) => {
-              const hasReacted = users.includes(currentUserId);
-              return (
-                <button 
-                  key={emoji}
-                  onClick={() => onReact?.(message.id, emoji)}
-                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs transition-colors border ${hasReacted ? 'bg-[var(--color-accent)]/20 border-[var(--color-accent)] text-[var(--color-accent)]' : 'bg-[var(--color-bg-primary)] border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-bg-card)]'}`}
-                >
-                  <span>{emoji}</span>
-                  <span className="font-semibold">{users.length}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {/* Reactions removed as requested */}
 
         {/* Read receipts indicator */}
         {!message.isDeleted && readCount > 0 && (
@@ -298,17 +281,7 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
         <div className="relative group/actions flex items-start opacity-0 group-hover:opacity-100 transition-opacity">
           <div className="absolute right-0 top-0 flex items-center bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg shadow-sm gap-0.5 overflow-hidden">
             {/* Built-in React Dropdown trigger */}
-            <div className="relative group/react flex">
-               <button className="text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] p-1.5" title="React">
-                 😀
-               </button>
-               {/* Extremely simple hover popup for predefined emojis */}
-               <div className="absolute bottom-full right-0 mb-1 hidden group-hover/react:flex bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-full shadow-lg p-1 gap-1 z-10">
-                 {['👍', '❤️', '😂', '😯', '😢', '🙏'].map(emoji => (
-                   <button key={emoji} onClick={() => onReact?.(message.id, emoji)} className="hover:scale-125 transition-transform w-8 h-8 flex items-center justify-center text-lg">{emoji}</button>
-                 ))}
-               </div>
-            </div>
+            {/* Reaction button removed */}
 
             <button onClick={() => onReply?.(message)} className="text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] p-1.5" title="Reply">
               ↩️
@@ -317,7 +290,25 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
               ➦
             </button>
             <button onClick={() => {
-              navigator.clipboard.writeText(message.content || message.fileUrl);
+              const textToCopy = message.content || message.fileUrl;
+              if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(textToCopy).catch(() => {});
+              } else {
+                const textArea = document.createElement("textarea");
+                textArea.value = textToCopy;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                  document.execCommand('copy');
+                } catch (err) {
+                  // Ignore
+                }
+                textArea.remove();
+              }
             }} className="text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] p-1.5" title="Copy">
               📄
             </button>

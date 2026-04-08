@@ -747,8 +747,9 @@ router.delete('/:id/messages/:msgId', requireGroupMember, async (req, res, next)
  */
 router.post('/:id/messages/:msgId/pin', requireGroupMember, requireGroupPermission('can_pin_messages'), async (req, res, next) => {
   try {
-    const msg = await messageService.pinMessage(req.params.msgId);
-    return success(res, msg);
+    const { msg, unpinnedIds } = await messageService.pinMessage(req.params.msgId);
+    emitToGroup(req.params.id, 'message:pinnedUpdate', { pinnedMsg: msg, unpinnedIds });
+    return success(res, { msg, unpinnedIds });
   } catch (err) {
     next(err);
   }
@@ -760,6 +761,7 @@ router.post('/:id/messages/:msgId/pin', requireGroupMember, requireGroupPermissi
 router.delete('/:id/messages/:msgId/pin', requireGroupMember, requireGroupPermission('can_pin_messages'), async (req, res, next) => {
   try {
     const msg = await messageService.unpinMessage(req.params.msgId);
+    emitToGroup(req.params.id, 'message:unpinned', { messageId: msg.id });
     return success(res, msg);
   } catch (err) {
     next(err);
