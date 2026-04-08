@@ -231,16 +231,16 @@ async function areFriends(userId1, userId2) {
 /**
  * Add a member to a group.
  * If the target is a friend of the adder, add directly.
- * If not a friend, create a group invite instead.
+ * If not a friend, create a group invite instead (unless bypassFriendCheck is true).
  */
-async function addMember(groupId, userId, addedByUserId, ringInput) {
+async function addMember(groupId, userId, addedByUserId, ringInput, bypassFriendCheck = false) {
   const existing = await prisma.groupMember.findUnique({
     where: { userId_groupId: { userId, groupId } },
   });
   if (existing) throw Object.assign(new Error('User is already a member.'), { statusCode: 409, code: 'ALREADY_MEMBER' });
 
-  // Check friendship (skip for system/admin additions where addedByUserId is null)
-  if (addedByUserId && addedByUserId !== userId) {
+  // Check friendship (skip for system/admin additions where addedByUserId is null, or if bypass requested)
+  if (!bypassFriendCheck && addedByUserId && addedByUserId !== userId) {
     const friends = await areFriends(addedByUserId, userId);
     if (!friends) {
       // Create an invite instead of adding directly
@@ -472,6 +472,61 @@ async function listUserInvites(userId) {
 }
 
 // ============================================================
+// INVITE LINKS
+// ============================================================
+
+/**
+ * Get or create the unique invite link token for a group.
+ */
+async function getInviteLink(groupId) {
+  const group = await prisma.cohortGroup.findUnique({ where: { id: groupId } });
+  if (!group) throw Object.assign(new Error('Group not found.'), { statusCode: 404 });
+  
+  if (group.inviteToken) {
+    return { token: group.inviteToken };
+  }
+
+  // Generate a random token
+  const crypto = require('crypto');
+  const token = crypto.randomBytes(16).toString('hex');
+  await prisma.cohortGroup.update({ where: { id: groupId }, data: { inviteToken: token } });
+  
+  return { token };
+}
+
+/**
+ * Join a group using an invite token.
+ */
+async function joinViaLink(token, userId) {
+  const group = await prisma.cohortGroup.findUnique({ where: { inviteToken: token } });
+  if (!group) throw Object.assign(new Error('Invalid or expired invite link.'), { statusCode: 404, code: 'INVALID_LINK' });
+
+  // Add the user bypassing friend check
+  // get default joining ring
+  const defaultRingSetting = group.ringConfig?.defaultRing !== undefined ? group.ringConfig.defaultRing : 3;
+  
+  const existing = await prisma.groupMember.findUnique({
+    where: { userId_groupId: { userId, groupId: group.id } },
+  });
+  if (existing) throw Object.assign(new Error('User is already a member.'), { statusCode: 409, code: 'ALREADY_MEMBER' });
+
+  const permissions = getDefaultPermissions(defaultRingSetting);
+
+  const member = await prisma.groupMember.create({
+    data: { userId, groupId: group.id, ring: defaultRingSetting, permissions },
+  });
+
+  // Also transition any pending db invite for this user to 'accepted', if it exists
+  await prisma.groupInvite.updateMany({
+    where: { groupId: group.id, userId, status: 'pending' },
+    data: { status: 'accepted' }
+  });
+
+  return { member, group };
+}
+
+
+// ============================================================
 // RING CONFIGURATION
 // ============================================================
 
@@ -567,5 +622,6 @@ module.exports = {
   getMemberRing, setMemberRing, getMemberPermissions, setMemberPermissions,
   muteMember, unmuteMember, isMuted, getUnreadCount,
   createInvite, acceptInvite, rejectInvite, listGroupInvites, listUserInvites,
+  getInviteLink, joinViaLink,
   areFriends, getDefaultPermissions, updateRingConfig,
 };

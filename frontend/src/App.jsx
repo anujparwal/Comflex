@@ -32,6 +32,7 @@ import MessagesPage from './pages/MessagesPage';
 import EventsPage from './pages/EventsPage';
 import ManageEventsPage from './pages/ManageEventsPage';
 import EventDetailsPage from './pages/EventDetailsPage';
+import JoinGroupPage from './pages/JoinGroupPage';
 
 export default function App() {
   return (
@@ -81,6 +82,11 @@ export default function App() {
           <Route path="/groups/:id" element={
             <ProtectedRoute>
               <ChatPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/join/:token" element={
+            <ProtectedRoute>
+              <JoinGroupPage />
             </ProtectedRoute>
           } />
 

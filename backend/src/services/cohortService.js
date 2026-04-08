@@ -250,4 +250,31 @@ async function retagUser(userId) {
   return assignCohortTags(userId, user.email);
 }
 
-module.exports = { assignCohortTags, retagUser };
+/**
+ * Extract the numeric year from cohort tags (e.g., 'cohort-2028' -> 2028)
+ */
+function extractCohortYear(cohortTags) {
+  if (!cohortTags || !Array.isArray(cohortTags)) return null;
+  for (const tag of cohortTags) {
+    if (tag.startsWith('cohort-') && !tag.includes('-', 7)) {
+      const year = parseInt(tag.split('-')[1], 10);
+      if (!isNaN(year)) return year;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract the branch code from cohort tags (e.g., 'branch-cs' -> 'cs')
+ */
+function extractBranch(cohortTags) {
+  if (!cohortTags || !Array.isArray(cohortTags)) return null;
+  for (const tag of cohortTags) {
+    if (tag.startsWith('branch-')) {
+      return tag.substring(7);
+    }
+  }
+  return null;
+}
+
+module.exports = { assignCohortTags, retagUser, extractCohortYear, extractBranch };

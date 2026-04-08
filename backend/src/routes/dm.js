@@ -7,14 +7,53 @@
 
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const multer = require('multer');
+const path = require('path');
 const authMiddleware = require('../middleware/auth');
 const dmService = require('../services/dmService');
 const { success, error } = require('../utils/apiResponse');
 
 const router = express.Router();
 
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, '../../uploads'));
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `dm-${req.user.id}-${Date.now()}${ext}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+});
+
+
 // All DM routes require authentication
 router.use(authMiddleware);
+
+/**
+ * POST /api/v1/dm/upload — Upload a file attachment for a DM.
+ * Returns the file data including its URL.
+ */
+router.post('/upload', upload.single('attachment'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return error(res, 'UPLOAD_REQUIRED', 'No file uploaded.', 400);
+    }
+    const fileUrl = `/uploads/${req.file.filename}`;
+    return success(res, {
+      fileUrl,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      mimetype: req.file.mimetype,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * GET /api/v1/dm — List all DM conversations.
@@ -61,7 +100,7 @@ router.post(
         );
       }
 
-      const message = await dmService.sendDM(req.user.id, req.params.userId, req.body.content);
+      const message = await dmService.sendDM(req.user.id, req.params.userId, req.body);
       return success(res, message, 201);
     } catch (err) {
       if (err.statusCode) return error(res, err.code, err.message, err.statusCode);
@@ -69,6 +108,23 @@ router.post(
     }
   }
 );
+
+/**
+ * PUT /api/v1/dm/messages/:msgId — Edit a DM (own messages only).
+ */
+router.put('/messages/:msgId', [body('content').trim().notEmpty().withMessage('Message content is required.')], async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return error(res, 'VALIDATION_ERROR', 'Invalid input.', 400, errors.array().map(e => ({ field: e.path, issue: e.msg })));
+    }
+    const result = await dmService.editDM(req.params.msgId, req.user.id, req.body.content);
+    return success(res, result);
+  } catch (err) {
+    if (err.statusCode) return error(res, err.code, err.message, err.statusCode);
+    next(err);
+  }
+});
 
 /**
  * PATCH /api/v1/dm/:userId/read — Mark all messages from a user as read.

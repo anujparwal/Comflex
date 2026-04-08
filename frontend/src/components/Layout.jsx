@@ -9,6 +9,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { groupApi } from '../api/groupApi';
+import { dmApi } from '../api/dmApi';
 
 const RING_LABELS = {
   0: { label: 'Admin', color: 'ring-badge-0' },
@@ -22,7 +23,7 @@ export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { connected, onEvent } = useSocket();
-  const [totalUnread, setTotalUnread] = useState(0);
+  const [totalUnread, setTotalUnread] = useState({ groups: 0, dms: 0 });
   const fetchTimeoutRef = useRef(null);
 
   const handleLogout = async () => {
@@ -33,10 +34,16 @@ export default function Layout({ children }) {
   // Debounced fetch to avoid rapid re-fetching
   const fetchUnread = useCallback(async () => {
     try {
-      const res = await groupApi.listGroups();
-      const groups = res.data.data || [];
-      const total = groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0);
-      setTotalUnread(total);
+      const [groupRes, dmRes] = await Promise.all([
+        groupApi.listGroups().catch(() => ({ data: { data: [] } })),
+        dmApi.listConversations().catch(() => ({ data: { data: [] } }))
+      ]);
+      const groups = groupRes.data?.data || [];
+      const dms = dmRes.data?.data || [];
+      
+      const groupUnread = groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0);
+      const dmUnread = dms.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+      setTotalUnread({ groups: groupUnread, dms: dmUnread });
     } catch {}
   }, []);
 
@@ -67,6 +74,8 @@ export default function Layout({ children }) {
       onEvent('message:new', debouncedFetchUnread),
       onEvent('message:readUpdate', debouncedFetchUnread),
       onEvent('message:delete', debouncedFetchUnread),
+      onEvent('dm:new', debouncedFetchUnread),
+      onEvent('dm:readUpdate', debouncedFetchUnread),
     ];
     return () => cleanups.forEach(fn => fn?.());
   }, [connected, onEvent, debouncedFetchUnread]);
@@ -75,9 +84,9 @@ export default function Layout({ children }) {
 
   const navItems = [
     { path: '/profile', label: 'Profile', icon: '👤' },
-    { path: '/groups', label: 'Groups', icon: '💬', badge: totalUnread },
+    { path: '/groups', label: 'Groups', icon: '💬', badge: totalUnread.groups },
     { path: '/friends', label: 'Friends', icon: '👥' },
-    { path: '/messages', label: 'Messages', icon: '✉️' },
+    { path: '/messages', label: 'Messages', icon: '✉️', badge: totalUnread.dms },
     { path: '/events', label: 'Events', icon: '📅' },
     ...(user?.globalRing <= 1 || user?.canCreateEvents ? [{ path: '/manage-events', label: 'Manage Events', icon: '📝' }] : []),
     ...(isAdmin ? [{ path: '/admin', label: 'Admin Dashboard', icon: '⚙️' }] : []),

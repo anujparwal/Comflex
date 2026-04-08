@@ -161,19 +161,17 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
           {/* Friend Actions */}
           {!isSelf && (
             <div className="space-y-2">
+              <a href={`/messages/${userId}`} className="btn btn-primary w-full text-center text-sm block">
+                💬 Message
+              </a>
               {profile.friendshipStatus === 'accepted' ? (
-                <>
-                  <a href={`/messages/${userId}`} className="btn btn-primary w-full text-center text-sm block">
-                    💬 Message
-                  </a>
-                  <button
-                    onClick={() => handleFriendAction('remove')}
+                <button
+                  onClick={() => handleFriendAction('remove')}
                     disabled={actionLoading}
                     className="btn btn-secondary w-full text-sm"
                   >
                     Unfriend
                   </button>
-                </>
               ) : profile.friendshipStatus === 'pending' ? (
                 profile.isRequester ? (
                   <button disabled className="btn btn-secondary w-full text-sm">

@@ -17,6 +17,8 @@ import GroupSidebar from '../components/GroupSidebar';
 import UserProfilePanel from '../components/UserProfilePanel';
 import GroupSettingsPanel from '../components/GroupSettingsPanel';
 
+import { friendApi } from '../api/friendApi';
+
 export default function ChatPage() {
   const { id: groupId } = useParams();
   const { user } = useAuth();
@@ -33,6 +35,7 @@ export default function ChatPage() {
   const [membership, setMembership] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [members, setMembers] = useState([]);
+  const [friendIds, setFriendIds] = useState([]);
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState('');
@@ -96,12 +99,14 @@ export default function ChatPage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [groupRes, msgsRes] = await Promise.all([
+        const [groupRes, msgsRes, friendsRes] = await Promise.all([
           groupApi.getGroup(groupId),
           groupApi.getMessages(groupId, 1, 50),
+          friendApi.listFriends().catch(() => ({ data: { data: [] } })),
         ]);
         setGroup(groupRes.data.data);
         setMessages(msgsRes.data.data.messages.reverse()); // oldest first
+        setFriendIds(friendsRes.data.data.map(f => f.id));
 
         // Get members for mention autocomplete
         try {
@@ -568,6 +573,7 @@ export default function ChatPage() {
                     onUserClick={(userId) => setSelectedUserId(userId)}
                     groupId={groupId}
                     members={members}
+                    isFriend={msg.authorId !== user?.id && friendIds.includes(msg.authorId)}
                   />
                 ))
               )}
@@ -728,6 +734,7 @@ export default function ChatPage() {
                 userPermissions={userPerms}
                 currentUserId={user?.id}
                 isAdmin={isAdmin}
+                onUserClick={(userId) => setSelectedUserId(userId)}
               />
             </div>
           )}

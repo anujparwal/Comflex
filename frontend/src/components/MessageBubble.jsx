@@ -28,15 +28,18 @@ function renderContentWithMentions(content, mentionData = [], onUserClick) {
     if (m.displayName) mentionMap[m.displayName.toLowerCase()] = m.userId;
   });
 
-  // Build regex from mention names, escaped and sorted by length (longest first)
-  const names = mentionData
+  // Build regex for URLs and Mentions
+  const mentionNames = mentionData
     .filter(m => m.displayName)
     .map(m => m.displayName)
     .sort((a, b) => b.length - a.length);
-  if (!names.length) return content;
 
-  const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const regex = new RegExp(`@(${escaped.join('|')})`, 'gi');
+  const escaped = mentionNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const mentionPattern = escaped.length > 0 ? `@(${escaped.join('|')})` : null;
+  const urlPattern = `(https?:\\/\\/[^\\s]+)`;
+  const combinedPattern = mentionPattern ? `${urlPattern}|${mentionPattern}` : urlPattern;
+  
+  const regex = new RegExp(combinedPattern, 'gi');
 
   const parts = [];
   let lastIndex = 0;
@@ -45,18 +48,29 @@ function renderContentWithMentions(content, mentionData = [], onUserClick) {
     if (match.index > lastIndex) {
       parts.push(content.slice(lastIndex, match.index));
     }
-    const matchedName = match[1];
-    const userId = mentionMap[matchedName.toLowerCase()];
-    parts.push(
-      <span
-        key={match.index}
-        className="mention-chip"
-        onClick={(e) => { e.stopPropagation(); userId && onUserClick?.(userId); }}
-        style={{ cursor: userId ? 'pointer' : 'default' }}
-      >
-        @{matchedName}
-      </span>
-    );
+    
+    if (match[1]) {
+      // It's a URL
+      parts.push(
+        <a key={match.index} href={match[1]} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline break-all" onClick={e => e.stopPropagation()}>
+          {match[1]}
+        </a>
+      );
+    } else if (match[2]) {
+      // It's a Mention
+      const matchedName = match[2];
+      const userId = mentionMap[matchedName.toLowerCase()];
+      parts.push(
+        <span
+          key={match.index}
+          className="mention-chip"
+          onClick={(e) => { e.stopPropagation(); userId && onUserClick?.(userId); }}
+          style={{ cursor: userId ? 'pointer' : 'default' }}
+        >
+          @{matchedName}
+        </span>
+      );
+    }
     lastIndex = regex.lastIndex;
   }
   if (lastIndex < content.length) {
@@ -65,7 +79,7 @@ function renderContentWithMentions(content, mentionData = [], onUserClick) {
   return parts.length > 0 ? parts : content;
 }
 
-export default function MessageBubble({ message, currentUserId, permissions = {}, isAdmin, onEdit, onDelete, onPin, onUserClick, groupId, members = [], onReply, onForward, onReact, replyMessage }) {
+export default function MessageBubble({ message, currentUserId, permissions = {}, isAdmin, onEdit, onDelete, onPin, onUserClick, groupId, members = [], onReply, onForward, onReact, replyMessage, isFriend }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const [showReadBy, setShowReadBy] = useState(false);
@@ -127,7 +141,7 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
   }, [message.content, message.isDeleted, mentionData, onUserClick]);
 
   return (
-    <div id={`msg-${message.id}`} className={`flex gap-3 p-3 rounded-xl transition-colors hover:bg-[var(--color-bg-secondary)] group ${message.isDeleted ? 'opacity-50' : 'transition-all duration-500'}`}>
+    <div id={`msg-${message.id}`} className={`flex gap-3 p-3 rounded-xl transition-colors group relative ${message.isDeleted ? 'opacity-50' : 'transition-all duration-500'} hover:bg-[var(--color-bg-secondary)]`}>
       {/* Avatar */}
       <div className="flex-shrink-0 cursor-pointer" onClick={handleAuthorClick}>
         {author.avatarUrl ? (
@@ -170,6 +184,7 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
 
         <div className="flex items-center gap-2 mb-0.5">
           <span className="font-semibold text-sm cursor-pointer hover:underline" style={{ color: ringColor }} onClick={handleAuthorClick}>{author.displayName || 'Unknown'}</span>
+          {/* Friend Status Badge removed */}
           {/* Badges */}
           {author.displayBadges?.slice(0, 3).map((badge, i) => (
             <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-card)] text-[var(--color-text-muted)]">{badge}</span>
