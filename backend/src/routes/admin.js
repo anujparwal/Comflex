@@ -711,4 +711,74 @@ router.delete('/users/:id', async (req, res, next) => {
   }
 });
 
+// ============================================================
+// DATABASE MANAGEMENT
+// ============================================================
+
+/**
+ * GET /api/v1/admin/database/backup
+ * Download a full JSON dump of the database.
+ */
+router.get('/database/backup', async (req, res, next) => {
+  try {
+    const backup = {
+      timestamp: new Date().toISOString(),
+      institutionConfig: await prisma.institutionConfig.findMany(),
+      users: await prisma.user.findMany(),
+      cohortGroups: await prisma.cohortGroup.findMany(),
+      groupMembers: await prisma.groupMember.findMany(),
+      groupInvites: await prisma.groupInvite.findMany(),
+      messages: await prisma.message.findMany(),
+      messageReadReceipts: await prisma.messageReadReceipt.findMany(),
+      muteRecords: await prisma.muteRecord.findMany(),
+      friendships: await prisma.friendship.findMany(),
+      directMessages: await prisma.directMessage.findMany(),
+      events: await prisma.event.findMany(),
+      eventOrganizers: await prisma.eventOrganizer.findMany(),
+      eventTeams: await prisma.eventTeam.findMany(),
+      eventTeamMembers: await prisma.eventTeamMember.findMany(),
+      eventTeamInvites: await prisma.eventTeamInvite.findMany(),
+    };
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="comflex-backup.json"');
+    return res.status(200).send(JSON.stringify(backup, null, 2));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * DELETE /api/v1/admin/database/clear
+ * Danger zone: Delete all data except InstitutionConfig and the calling Admin User.
+ */
+router.delete('/database/clear', async (req, res, next) => {
+  try {
+    const adminId = req.user.id;
+
+    // Delete in reverse order of dependency where possible, but prisma handles MongoDB references mostly manually anyway.
+    await prisma.$transaction([
+      prisma.eventTeamInvite.deleteMany(),
+      prisma.eventTeamMember.deleteMany(),
+      prisma.eventTeam.deleteMany(),
+      prisma.eventOrganizer.deleteMany(),
+      prisma.event.deleteMany(),
+      prisma.directMessage.deleteMany(),
+      prisma.friendship.deleteMany(),
+      prisma.muteRecord.deleteMany(),
+      prisma.messageReadReceipt.deleteMany(),
+      prisma.message.deleteMany(),
+      prisma.groupInvite.deleteMany(),
+      prisma.groupMember.deleteMany(),
+      prisma.cohortGroup.deleteMany(),
+      // Delete all users EXCEPT the caller and anyone else with globalRing 0 just to be safe, but let's just protect the caller specifically
+      prisma.user.deleteMany({ where: { id: { not: adminId } } }),
+    ]);
+
+    return success(res, { message: 'Database successfully cleared. Admin session preserved.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
