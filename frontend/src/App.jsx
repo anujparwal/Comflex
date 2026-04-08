@@ -29,6 +29,9 @@ import ChatPage from './pages/ChatPage';
 import SetPasswordPage from './pages/SetPasswordPage';
 import FriendsPage from './pages/FriendsPage';
 import MessagesPage from './pages/MessagesPage';
+import EventsPage from './pages/EventsPage';
+import ManageEventsPage from './pages/ManageEventsPage';
+import EventDetailsPage from './pages/EventDetailsPage';
 
 export default function App() {
   return (
@@ -97,6 +100,23 @@ export default function App() {
           <Route path="/messages/:userId" element={
             <ProtectedRoute>
               <MessagesPage />
+            </ProtectedRoute>
+          } />
+
+          {/* Events */}
+          <Route path="/events" element={
+            <ProtectedRoute>
+              <EventsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/manage-events" element={
+            <ProtectedRoute>
+              <ManageEventsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/events/:id" element={
+            <ProtectedRoute>
+              <EventDetailsPage />
             </ProtectedRoute>
           } />
 
