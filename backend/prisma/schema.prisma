@@ -27,9 +27,11 @@ model User {
   cohortTags     String[] // e.g. ["cohort-28", "cohort-28-27", "branch-cs"]
   cfHandle       String?
   cfRating       Int?
-  creditBalance  Int      @default(0)
+  creditBalance  Int      @default(1000)
   subscriptionPlan   String?  @default("free") // "free", "pro", "ultra"
   subscriptionExpiry DateTime?
+  backupSubscriptionPlan   String?
+  backupSubscriptionExpiry DateTime?
   chatbotStorageUsed Int?     @default(0) // in bytes
   dailyUploadCount   Int?     @default(0)
   lastUploadDate     DateTime? @default(now())

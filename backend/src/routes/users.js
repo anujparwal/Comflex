@@ -43,13 +43,16 @@ const upload = multer({
   },
 });
 
+const { syncMembership } = require('../utils/membershipSync');
+
 /**
  * GET /api/v1/users/me
  * Retrieve the authenticated user's profile.
  */
 router.get('/me', authMiddleware, async (req, res, next) => {
   try {
-    const user = await userService.getUserById(req.user.id);
+    let user = await userService.getUserById(req.user.id);
+    user = await syncMembership(user);
     return success(res, user);
   } catch (err) {
     if (err.statusCode) return error(res, err.code, err.message, err.statusCode);

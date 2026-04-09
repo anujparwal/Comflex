@@ -15,6 +15,7 @@ export default function FloatingChatbot() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showResourcePicker, setShowResourcePicker] = useState(false);
+  const [alertInfo, setAlertInfo] = useState(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export default function FloatingChatbot() {
     if (!file) return;
 
     if (limits?.plan !== 'ultra') {
-      alert('Local uploads are only available on the Ultra plan.');
+      setAlertInfo({ type: 'alert', message: 'Local uploads are only available on the Ultra plan.' });
       return;
     }
 
@@ -70,7 +71,7 @@ export default function FloatingChatbot() {
       fetchLimits();
       fetchNotes();
     } catch (err) {
-      alert(err.response?.data?.error || 'Upload failed');
+      setAlertInfo({ type: 'alert', message: err.response?.data?.error || 'Upload failed' });
     } finally {
       setLoading(false);
     }
@@ -87,21 +88,29 @@ export default function FloatingChatbot() {
       fetchNotes();
     } catch (err) {
       const msg = err.response?.data?.error?.message || err.response?.data?.error || 'Upload failed';
-      alert(typeof msg === 'object' ? JSON.stringify(msg) : msg);
+      setAlertInfo({ type: 'alert', message: typeof msg === 'object' ? JSON.stringify(msg) : msg });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteNote = async (id) => {
-    if (!window.confirm('Delete this note?')) return;
+  const handleDeleteNote = (id) => {
+    setAlertInfo({
+      type: 'confirm',
+      message: 'Are you sure you want to delete this note?',
+      onConfirm: () => executeDeleteNote(id)
+    });
+  };
+
+  const executeDeleteNote = async (id) => {
+    setAlertInfo(null);
     try {
       await api.delete(`/chatbot/${id}`);
       if (selectedNoteId === id) setSelectedNoteId(null);
       fetchLimits();
       fetchNotes();
     } catch (err) {
-      alert('Delete failed');
+      setAlertInfo({ type: 'alert', message: 'Delete failed' });
     }
   };
 
@@ -250,6 +259,32 @@ export default function FloatingChatbot() {
           onClose={() => setShowResourcePicker(false)}
           onSelect={handleResourceUpload}
         />
+      )}
+
+      {/* Alert Popup */}
+      {alertInfo && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-[60] flex flex-col justify-center items-center p-6 animate-fade-in text-center">
+           <div className="bg-white p-6 rounded-xl shadow-2xl border border-gray-200 w-full max-w-[280px]">
+             <h3 className="font-bold text-gray-800 mb-2">{alertInfo.type === 'confirm' ? 'Confirmation' : 'Notice'}</h3>
+             <p className="text-sm text-gray-600 mb-6">{alertInfo.message}</p>
+             <div className="flex gap-3 justify-center">
+               <button 
+                 onClick={() => setAlertInfo(null)}
+                 className="px-4 py-2 rounded-lg text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+               >
+                 {alertInfo.type === 'confirm' ? 'Cancel' : 'OK'}
+               </button>
+               {alertInfo.type === 'confirm' && (
+                 <button 
+                   onClick={alertInfo.onConfirm}
+                   className="px-4 py-2 rounded-lg text-sm font-semibold bg-red-600 hover:bg-red-700 text-white transition"
+                 >
+                   Delete
+                 </button>
+               )}
+             </div>
+           </div>
+        </div>
       )}
     </div>
   );
