@@ -97,7 +97,7 @@ export default function Layout({ children }) {
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-[var(--color-bg-secondary)] border-r border-[var(--color-border)] flex flex-col">
+      <aside className="w-64 glass-panel flex flex-col z-10 relative shadow-[4px_0_24px_rgba(0,0,0,0.3)]">
         {/* Logo */}
         <div className="p-6 border-b border-[var(--color-border)]">
           <h1 className="text-2xl font-bold gradient-text">Comflex</h1>
@@ -112,8 +112,8 @@ export default function Layout({ children }) {
               to={item.path}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                 location.pathname === item.path || location.pathname.startsWith(item.path + '/')
-                  ? 'chip-accent'
-                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-card)] hover:text-[var(--color-text-primary)]'
+                  ? 'bg-white/10 border-t border-t-white/30 shadow-[0_4px_20px_rgba(139,92,246,0.15)] text-white backdrop-blur-md'
+                  : 'text-[var(--color-text-secondary)] hover:bg-white/5 hover:text-[var(--color-text-primary)] border-t border-transparent'
               }`}
             >
               <span className="text-lg">{item.icon}</span>
@@ -131,9 +131,9 @@ export default function Layout({ children }) {
         <div className="p-4 border-t border-[var(--color-border)]">
           <div className="flex items-center gap-3 mb-3">
             {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
+              <img src={user.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover avatar-glow" />
             ) : (
-              <div className="w-10 h-10 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-white font-bold text-sm">
+              <div className="w-10 h-10 rounded-full avatar-gradient flex items-center justify-center text-white font-bold text-sm avatar-glow">
                 {user?.displayName?.charAt(0)?.toUpperCase() || '?'}
               </div>
             )}

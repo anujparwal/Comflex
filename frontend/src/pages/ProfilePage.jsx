@@ -136,7 +136,7 @@ export default function ProfilePage() {
               <Avatar 
                 src={user.avatarUrl} 
                 name={user.displayName} 
-                className="w-24 h-24 rounded-full object-cover border-2 border-[var(--color-border)]" 
+                className="w-24 h-24 rounded-full object-cover border-2 border-[var(--color-border)] avatar-glow" 
               />
               <button
                 onClick={() => fileInputRef.current?.click()}

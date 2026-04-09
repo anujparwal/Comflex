@@ -7,7 +7,7 @@ export default function Avatar({ src, alt, name, className, fallbackChar = '?' }
     const initial = name?.charAt(0)?.toUpperCase() || fallbackChar;
     // ensure bg color is vibrant if we want (or keep accent)
     return (
-      <div className={`flex items-center justify-center bg-[var(--color-accent)] text-white font-bold overflow-hidden ${className}`}>
+      <div className={`flex items-center justify-center avatar-gradient text-white font-bold overflow-hidden ${className}`}>
         {initial}
       </div>
     );
