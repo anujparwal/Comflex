@@ -63,7 +63,7 @@ export default function EventDetailsPage() {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskSubmissions, setTaskSubmissions] = useState({});
   const [selectedTaskIdx, setSelectedTaskIdx] = useState(-1);
-  const [submissionCode, setSubmissionCode] = useState('');
+  const [submissionCodes, setSubmissionCodes] = useState({});
   const [pointAdjustData, setPointAdjustData] = useState({ teamId: '', pointsAdded: 0, reason: '' });
   const [leaderboardHistoryOpen, setLeaderboardHistoryOpen] = useState(null);
   const [gradingSubId, setGradingSubId] = useState(null);
@@ -114,18 +114,33 @@ export default function EventDetailsPage() {
     fetchEventData();
   }, [fetchEventData]);
 
-  const handleCreateTeam = async (e) => {
-    e.preventDefault();
-    if (!teamName.trim()) return;
+  const handleCreateTeam = async (e, isIndividual = false) => {
+    e?.preventDefault();
+    const nameToUse = isIndividual ? user.displayName : teamName;
+    if (!nameToUse.trim()) return;
     setActionLoading(true);
     setMessage('');
     try {
-      await eventApi.createTeam(id, teamName);
-      setTeamName('');
-      setMessage('Team created successfully!');
+      await eventApi.createTeam(id, nameToUse);
+      if (!isIndividual) setTeamName('');
+      setMessage(isIndividual ? 'Registered successfully!' : 'Team created successfully!');
       fetchEventData();
     } catch (err) {
-      setMessage(err.response?.data?.error?.message || 'Failed to create team.');
+      setMessage(err.response?.data?.error?.message || 'Failed to register.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRegisterTeam = async () => {
+    setActionLoading(true);
+    setMessage('');
+    try {
+      await eventApi.registerTeam(id, userTeam.id);
+      setMessage('Team registered for the event successfully!');
+      fetchEventData();
+    } catch (err) {
+      setMessage(err.response?.data?.error?.message || 'Failed to register team.');
     } finally {
       setActionLoading(false);
     }
@@ -262,12 +277,13 @@ export default function EventDetailsPage() {
   };
 
   const handleSubmitTask = async (taskId) => {
-    if (!submissionCode.trim()) return;
+    const code = submissionCodes[taskId] || '';
+    if (!code.trim()) return;
     setActionLoading(true);
     try {
-      await eventApi.submitTask(id, taskId, { text: submissionCode });
+      await eventApi.submitTask(id, taskId, { text: code });
       setMessage('Task submitted!');
-      setSubmissionCode('');
+      setSubmissionCodes(prev => ({ ...prev, [taskId]: '' }));
       fetchEventData();
     } catch(err) {
       setMessage(err.response?.data?.error?.message || 'Submission failed.');
@@ -470,7 +486,7 @@ export default function EventDetailsPage() {
                       {event.organizers.map(org => (
                         <div key={org.id} className="p-3 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <img src={org.user.avatarUrl || '/default-avatar.png'} className="w-8 h-8 rounded-full" />
+                            <img src={org.user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(org.user.displayName)}&background=random`} className="w-8 h-8 rounded-full" />
                             <div>
                               <div className="font-bold text-sm">{org.user.displayName}</div>
                               <div className="text-xs text-[var(--color-text-secondary)]">
@@ -494,7 +510,7 @@ export default function EventDetailsPage() {
           </div>
         )}
 
-        {event.isTeamEvent && (
+        {event.isTeamEvent ? (
           <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm">
             <h3 className="text-xl font-bold mb-4">Team Details</h3>
             {!isUpcoming && <div className="mb-4 text-sm font-semibold text-[var(--color-warning)]">Team formation is closed. The event has started.</div>}
@@ -519,7 +535,7 @@ export default function EventDetailsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                     {userTeam.members.map(m => (
                       <div key={m.userId} className="flex items-center gap-3 bg-[var(--color-bg-card)] border border-[var(--color-border)] p-3 rounded-xl">
-                        <img src={m.user.avatarUrl || '/default-avatar.png'} alt={m.user.displayName} className="w-8 h-8 rounded-full" />
+                        <img src={m.user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.user.displayName)}&background=random`} alt={m.user.displayName} className="w-8 h-8 rounded-full" />
                         <span className="font-medium text-sm">{m.user.displayName}</span>
                       </div>
                     ))}
@@ -532,7 +548,7 @@ export default function EventDetailsPage() {
                          {userTeam.invites.filter(i => i.status === 'pending').map(inv => (
                            <li key={inv.id} className="flex items-center justify-between text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] px-3 py-2 rounded-lg">
                              <div className="flex items-center gap-2">
-                               <img src={inv.invitedUser.avatarUrl || '/default-avatar.png'} className="w-5 h-5 rounded-full" />
+                               <img src={inv.invitedUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(inv.invitedUser.displayName)}&background=random`} className="w-5 h-5 rounded-full" />
                                <span className="text-[var(--color-text-primary)] font-medium">{inv.invitedUser.displayName}</span>
                              </div>
                              <span className="text-xs text-[var(--color-text-muted)] italic">Waiting...</span>
@@ -562,7 +578,7 @@ export default function EventDetailsPage() {
                           }).map(u => (
                             <div key={u.id} className="flex items-center justify-between p-3 hover:bg-[var(--color-bg-secondary)] rounded-lg transition-colors">
                               <div className="flex items-center gap-3">
-                                <img src={u.avatarUrl || '/default-avatar.png'} className="w-8 h-8 rounded-full" />
+                                <img src={u.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.displayName)}&background=random`} className="w-8 h-8 rounded-full" />
                                 <div>
                                   <div className="font-medium text-sm">{u.displayName}</div>
                                   <div className="text-xs text-[var(--color-text-muted)]">{u.username || u.email}</div>
@@ -581,6 +597,20 @@ export default function EventDetailsPage() {
                       ) : searchQuery.length > 1 ? (
                         <p className="text-sm text-[var(--color-text-muted)] pl-1">No matching users found capable of being invited.</p>
                       ) : null}
+                    </div>
+                  )}
+                  {userTeam.status === 'pending' && userTeam.leaderId === user.id && (
+                    <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+                      <h5 className="font-semibold text-sm mb-3">Finalize Registration</h5>
+                      <p className="text-xs text-[var(--color-text-muted)] mb-3">Your team is currently pending. Once you meet the required minimum size of {event.minTeamSize}, you can register.</p>
+                      <button onClick={handleRegisterTeam} disabled={actionLoading || userTeam.members.length < event.minTeamSize} className="btn btn-primary px-4 py-2 text-sm text-center w-full">
+                        Register Team for Event
+                      </button>
+                    </div>
+                  )}
+                  {userTeam.status === 'pending' && userTeam.leaderId !== user.id && (
+                    <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+                       <p className="text-xs text-[var(--color-text-muted)] italic text-center">Your team leader must finalize the registration once the team has at least {event.minTeamSize} members.</p>
                     </div>
                   )}
                 </div>
@@ -647,10 +677,21 @@ export default function EventDetailsPage() {
               </div>
             )}
           </div>
+        ) : (
+          <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm mt-6">
+            <h3 className="text-xl font-bold mb-4">Event Registration</h3>
+            {userTeam ? (
+              <div className="text-sm font-semibold text-[var(--color-success)] px-4 py-3 bg-[var(--color-success)]/10 rounded-lg">You are registered for this event.</div>
+            ) : (
+              <button onClick={(e) => handleCreateTeam(e, true)} disabled={actionLoading} className="btn btn-primary px-6">
+                Register for Event
+              </button>
+            )}
+          </div>
         )}
 
         {/* TASKS SECTION */}
-        {(isOrganizer || (userTeam && (isOngoing || isCompleted))) && (
+        {(isOrganizer || (userTeam && userTeam.status === 'registered' && (isOngoing || isCompleted))) && (
           <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm mt-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold gradient-text">Event Tasks</h3>
@@ -755,8 +796,8 @@ export default function EventDetailsPage() {
                            <h5 className="text-xs font-bold uppercase mb-2">Submit Answer ({task.submissionType})</h5>
                            {task.submissionType === 'file' && <p className="text-xs text-[var(--color-text-muted)] mb-2 italic">Please upload your file to Drive and paste the shareable link below.</p>}
                            <div className="flex gap-2">
-                             <input type="text" value={submissionCode} onChange={e => setSubmissionCode(e.target.value)} placeholder="Type/paste your answer or link here..." className="flex-1 text-sm bg-[var(--color-bg-primary)]" />
-                             <button onClick={() => handleSubmitTask(task.id)} disabled={actionLoading || !submissionCode.trim()} className="btn btn-primary text-sm shrink-0 px-4">Submit</button>
+                             <input type="text" value={submissionCodes[task.id] || ''} onChange={e => setSubmissionCodes({...submissionCodes, [task.id]: e.target.value})} placeholder="Type/paste your answer or link here..." className="flex-1 text-sm bg-[var(--color-bg-primary)]" />
+                             <button onClick={() => handleSubmitTask(task.id)} disabled={actionLoading || !(submissionCodes[task.id] || '').trim()} className="btn btn-primary text-sm shrink-0 px-4">Submit</button>
                            </div>
                         </div>
                       )}

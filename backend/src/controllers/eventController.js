@@ -289,7 +289,7 @@ exports.createTeam = async (req, res, next) => {
         eventId,
         name,
         leaderId: req.user.id,
-        status: 'registered'
+        status: (event.isTeamEvent && event.minTeamSize > 1) ? 'pending' : 'registered'
       }
     });
 
@@ -839,4 +839,46 @@ exports.adjustTeamPoints = async (req, res, next) => {
 
     return success(res, adj, 201);
   } catch(err) { next(err); }
+};
+
+exports.registerTeam = async (req, res, next) => {
+  try {
+    const { id: eventId, teamId } = req.params;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+
+    const team = await prisma.eventTeam.findUnique({ 
+        where: { id: teamId },
+        include: { members: true }
+    });
+    
+    if (!team) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Team not found.' } });
+
+    if (team.leaderId !== req.user.id) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only team leader can register the team.' } });
+    }
+
+    if (team.status === 'registered') {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Team is already registered.' } });
+    }
+    
+    // Validate team sizes
+    if (team.members.length < event.minTeamSize) {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: `Team must have at least ${event.minTeamSize} members to register.` } });
+    }
+    
+    if (team.members.length > event.maxTeamSize) {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: `Team cannot exceed ${event.maxTeamSize} members.` } });
+    }
+
+    const updatedTeam = await prisma.eventTeam.update({
+        where: { id: teamId },
+        data: { status: 'registered' }
+    });
+
+    return success(res, updatedTeam);
+  } catch (err) {
+    next(err);
+  }
 };

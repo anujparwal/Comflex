@@ -8,6 +8,7 @@ export const eventApi = {
   updateEvent: (id, data) => client.patch(`/events/${id}`, data),
   deleteEvent: (id) => client.delete(`/events/${id}`),
   createTeam: (eventId, name) => client.post(`/events/${eventId}/teams`, { name }),
+  registerTeam: (eventId, teamId) => client.post(`/events/${eventId}/teams/${teamId}/register`),
   listTeams: (eventId) => client.get(`/events/${eventId}/teams`),
   inviteToTeam: (eventId, teamId, userId) => client.post(`/events/${eventId}/teams/${teamId}/invites`, { userId }),
   acceptTeamInvite: (eventId, inviteId) => client.post(`/events/${eventId}/teams/invites/${inviteId}/accept`),

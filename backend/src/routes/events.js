@@ -110,6 +110,19 @@ router.post('/:id/teams',
 );
 
 /**
+ * POST /api/v1/events/:id/teams/:teamId/register
+ * Register a formed team for an event.
+ */
+router.post('/:id/teams/:teamId/register',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('teamId').isMongoId().withMessage('Invalid Team ID.')
+  ],
+  validate,
+  eventController.registerTeam
+);
+
+/**
  * GET /api/v1/events/:id/teams
  * List teams for an event.
  */
