@@ -36,6 +36,7 @@ import JoinGroupPage from './pages/JoinGroupPage';
 import ResourcesPage from './pages/ResourcesPage';
 import StorePage from './pages/StorePage';
 import FloatingChatbot from './components/FloatingChatbot';
+import Homepage from './pages/Homepage';
 
 export default function App() {
   return (
@@ -143,9 +144,9 @@ export default function App() {
             </ProtectedRoute>
           } />
 
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/profile" replace />} />
-          <Route path="*" element={<Navigate to="/profile" replace />} />
+          {/* Default redirect replacing old redirect with Homepage */}
+          <Route path="/" element={<Homepage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <FloatingChatbot />
       </AuthProvider>
