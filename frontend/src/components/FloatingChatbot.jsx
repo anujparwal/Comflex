@@ -64,7 +64,8 @@ export default function FloatingChatbot() {
     setLoading(true);
     try {
       await api.post('/chatbot/upload/local', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000
       });
       fetchLimits();
       fetchNotes();
@@ -81,7 +82,7 @@ export default function FloatingChatbot() {
 
     setLoading(true);
     try {
-      await api.post('/chatbot/upload/resource', { resourceId });
+      await api.post('/chatbot/upload/resource', { resourceId }, { timeout: 120000 });
       fetchLimits();
       fetchNotes();
     } catch (err) {
@@ -116,7 +117,7 @@ export default function FloatingChatbot() {
       const res = await api.post('/chatbot/chat', {
         noteId: selectedNoteId,
         query: userMsg.text
-      });
+      }, { timeout: 120000 });
       
       setMessages(prev => [...prev, { role: 'bot', text: res.data.data.answer }]);
       
@@ -197,7 +198,7 @@ export default function FloatingChatbot() {
         {limits?.plan === 'ultra' && (
            <label className="p-1.5 rounded bg-purple-100 hover:bg-purple-200 text-purple-700 cursor-pointer disabled:opacity-50 flex items-center">
              <Paperclip size={14} />
-             <input type="file" className="hidden" onChange={handleLocalUpload} />
+             <input type="file" className="hidden" accept=".pdf,.txt,.csv,.md" onChange={handleLocalUpload} />
            </label>
         )}
       </div>
@@ -299,7 +300,11 @@ function ResourcePickerModal({ onClose, onSelect }) {
     setLoading(true);
     try {
       const res = await resourceApi.getResources(subject.id);
-      setResources(res.data.data);
+      const allowedMimes = ['application/pdf', 'application/rtf'];
+      const supportedOnly = res.data.data.filter(r => 
+        r.mimetype && (r.mimetype.startsWith('text/') || allowedMimes.includes(r.mimetype))
+      );
+      setResources(supportedOnly);
     } catch(err) {
       console.error(err);
     } finally {

@@ -2,7 +2,10 @@ const { GoogleGenAI } = require('@google/genai');
 
 let ai;
 if (process.env.GEMINI_API_KEY) {
-  ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  ai = new GoogleGenAI({ 
+    apiKey: process.env.GEMINI_API_KEY,
+    httpOptions: { timeout: 120000 } 
+  });
 }
 
 async function uploadFileToGemini(filePath, mimeType, displayName) {
