@@ -51,6 +51,8 @@ router.post('/',
     body('title').trim().notEmpty().withMessage('Title is required.'),
     body('startDate').isISO8601().toDate().withMessage('A valid start date is required.'),
     body('category').trim().notEmpty().withMessage('Category is required.'),
+    body('durationHours').optional().isInt({ min: 0 }).withMessage('Must be non-negative integer.'),
+    body('durationMinutes').optional().isInt({ min: 0, max: 59 }).withMessage('Must be 0-59.'),
   ],
   validate,
   eventController.createEvent
@@ -74,6 +76,24 @@ router.delete('/:id',
   [param('id').isMongoId().withMessage('Invalid Event ID.')],
   validate,
   eventController.deleteEvent
+);
+
+// ==========================================
+// ORGANIZERS
+// ==========================================
+
+/**
+ * POST /api/v1/events/:id/organizers
+ * Add or update an organizer with granular permissions.
+ */
+router.post('/:id/organizers',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    body('userId').isMongoId().withMessage('User ID is required.'),
+    body('permissions').isObject().withMessage('Permissions must be an object.')
+  ],
+  validate,
+  eventController.addOrUpdateOrganizer
 );
 
 /**
@@ -101,7 +121,7 @@ router.get('/:id/teams',
 
 /**
  * POST /api/v1/events/:id/teams/:teamId/invites
- * Invite a user to a team.
+ * (Legacy/Admin) Invite a user directly via DM (optional retaining).
  */
 router.post('/:id/teams/:teamId/invites',
   [
@@ -115,7 +135,6 @@ router.post('/:id/teams/:teamId/invites',
 
 /**
  * POST /api/v1/events/:id/teams/invites/:inviteId/accept
- * Accept a team invite.
  */
 router.post('/:id/teams/invites/:inviteId/accept',
   [
@@ -128,7 +147,6 @@ router.post('/:id/teams/invites/:inviteId/accept',
 
 /**
  * POST /api/v1/events/:id/teams/invites/:inviteId/reject
- * Reject a team invite.
  */
 router.post('/:id/teams/invites/:inviteId/reject',
   [
@@ -137,6 +155,135 @@ router.post('/:id/teams/invites/:inviteId/reject',
   ],
   validate,
   eventController.rejectTeamInvite
+);
+
+/**
+ * POST /api/v1/events/:id/teams/:teamId/verify
+ * User clicks "Verify" to verify their participation in the team created by the leader
+ */
+router.post('/:id/teams/:teamId/verify',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('teamId').isMongoId().withMessage('Invalid Team ID.')
+  ],
+  validate,
+  eventController.verifyTeamParticipation
+);
+
+/**
+ * POST /api/v1/events/:id/teams/:teamId/leave
+ */
+router.post('/:id/teams/:teamId/leave',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('teamId').isMongoId().withMessage('Invalid Team ID.')
+  ],
+  validate,
+  eventController.leaveTeam
+);
+
+/**
+ * POST /api/v1/events/:id/teams/:teamId/propose-swap
+ */
+router.post('/:id/teams/:teamId/propose-swap',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('teamId').isMongoId().withMessage('Invalid Team ID.'),
+    body('proposedLeaderId').isMongoId().withMessage('Proposed leader ID is required.')
+  ],
+  validate,
+  eventController.proposeLeaderSwap
+);
+
+/**
+ * POST /api/v1/events/:id/teams/:teamId/accept-swap
+ */
+router.post('/:id/teams/:teamId/accept-swap',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('teamId').isMongoId().withMessage('Invalid Team ID.')
+  ],
+  validate,
+  eventController.acceptLeaderSwap
+);
+
+/**
+ * POST /api/v1/events/:id/teams/:teamId/reject-swap
+ */
+router.post('/:id/teams/:teamId/reject-swap',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('teamId').isMongoId().withMessage('Invalid Team ID.')
+  ],
+  validate,
+  eventController.rejectLeaderSwap
+);
+
+// ==========================================
+// TASKS
+// ==========================================
+
+router.post('/:id/tasks',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    body('title').trim().notEmpty().withMessage('Title required.'),
+    body('order').isInt({ min: 1 }).withMessage('Order required (positive integer).')
+  ],
+  validate,
+  eventController.createTask
+);
+
+// Fetches tasks available to the user (respecting dynamic unlock mode)
+router.get('/:id/tasks',
+  [param('id').isMongoId().withMessage('Invalid Event ID.')],
+  validate,
+  eventController.listTasks
+);
+
+// ==========================================
+// SUBMISSIONS
+// ==========================================
+
+router.post('/:id/tasks/:taskId/submit',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('taskId').isMongoId().withMessage('Invalid Task ID.'),
+    body('content').notEmpty().withMessage('Content required.')
+  ],
+  validate,
+  eventController.submitTask
+);
+
+// For organizers to grade submissions
+router.get('/:id/tasks/:taskId/submissions',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('taskId').isMongoId().withMessage('Invalid Task ID.')
+  ],
+  validate,
+  eventController.listSubmissions
+);
+
+// Manual evaluation
+router.post('/:id/submissions/:submissionId/evaluate',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('submissionId').isMongoId().withMessage('Invalid Submission ID.'),
+    body('status').isIn(['correct', 'wrong']).withMessage('Status must be correct or wrong.'),
+    body('scoreAwarded').isInt().withMessage('Score is required.')
+  ],
+  validate,
+  eventController.evaluateSubmission
+);
+
+// ==========================================
+// LEADERBOARD
+// ==========================================
+
+router.get('/:id/leaderboard',
+  [param('id').isMongoId().withMessage('Invalid Event ID.')],
+  validate,
+  eventController.getLeaderboard
 );
 
 module.exports = router;

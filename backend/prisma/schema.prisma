@@ -63,6 +63,7 @@ model User {
   teamsLed          EventTeam[]        @relation("TeamLeader")
   eventMemberships  EventTeamMember[]
   eventTeamInvites  EventTeamInvite[]
+  evaluatedSubmissions EventSubmission[]
 
   // Resource Relations
   resourcesUploaded Resource[]
@@ -259,11 +260,18 @@ model Event {
   description     String?
   startDate       DateTime
   endDate         DateTime?
+  durationHours   Int      @default(0)
+  durationMinutes Int      @default(0)
   status          String   @default("draft") // draft, published, ongoing, completed
   category        String   // app, web, cybersec, etc
   targetTags      String[] // e.g. ["cohort-28", "branch-cs", "cohort-28-cs"]
   creatorId       String   @db.ObjectId
   
+  // Tasks configurations
+  taskViewMode    String   @default("all") // "all" or "dynamic" (sequential)
+  scoreMode       String   @default("constant") // "constant" or "dynamic"
+  wrongSubmissionPenalty Int @default(0)
+
   // Subevent logic
   parentId        String?  @db.ObjectId
   keepTeamsSame   Boolean  @default(false)
@@ -272,6 +280,9 @@ model Event {
   isTeamEvent     Boolean  @default(false)
   minTeamSize     Int      @default(1)
   maxTeamSize     Int      @default(1)
+
+  // Timer configurations
+  autoStart       Boolean  @default(true)
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -283,6 +294,8 @@ model Event {
   organizers      EventOrganizer[]
   teams           EventTeam[]
   teamInvites     EventTeamInvite[]
+  tasks           EventTask[]
+  submissions     EventSubmission[]
 }
 
 model EventOrganizer {
@@ -299,17 +312,19 @@ model EventOrganizer {
 }
 
 model EventTeam {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  eventId     String   @db.ObjectId
-  name        String
-  leaderId    String   @db.ObjectId
-  status      String   @default("pending") // pending, registered, qualified_for_next_phase
-  points      Int      @default(0)         // For leaderboard/awarding points
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId          String   @db.ObjectId
+  name             String
+  leaderId         String   @db.ObjectId
+  proposedLeaderId String?  @db.ObjectId
+  status           String   @default("pending") // pending, registered, qualified_for_next_phase
+  points           Int      @default(0)         // For leaderboard/awarding points
   
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   leader      User     @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
   members     EventTeamMember[]
   invites     EventTeamInvite[]
+  submissions EventSubmission[]
 
   @@unique([eventId, name])
 }
@@ -318,6 +333,7 @@ model EventTeamMember {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   teamId      String   @db.ObjectId
   userId      String   @db.ObjectId
+  status      String   @default("unverified") // unverified, verified
   joinedAt    DateTime @default(now())
   
   team        EventTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -340,6 +356,45 @@ model EventTeamInvite {
   event          Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([teamId, invitedUserId])
+}
+
+model EventTask {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId         String   @db.ObjectId
+  title           String
+  description     String
+  order           Int      // For sequential viewing if dynamic
+  basePoints      Int      @default(100)
+  
+  // Customization
+  submissionType   String   @default("text") // text, file, url, mcq, true_false, checkboxes
+  submissionConfig Json?    // { options: ["A", "B"], correctOptions: ["A"], exactText: "myflag" }
+  isAutoEvaluated Boolean  @default(false)
+  
+  isDynamicScore  Boolean  @default(false)
+  decayPercentage Float    @default(0) // Percentage of basePoints lost per elapsed minute
+  wrongSubmissionPenalty Int @default(0) // Penalty deducted per wrong submit
+  
+  event           Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  submissions     EventSubmission[]
+}
+
+model EventSubmission {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId         String   @db.ObjectId
+  teamId          String   @db.ObjectId
+  taskId          String   @db.ObjectId
+  content         Json     // e.g. { text: "flag" }, { url: "github.com/..." }, { selectedOptions: ["A"] }
+  status          String   @default("pending") // pending, correct, wrong
+  scoreAwarded    Int      @default(0)
+  submittedAt     DateTime @default(now())
+  evaluatedAt     DateTime?
+  evaluatedById   String?  @db.ObjectId // If manually graded
+
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team            EventTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  task            EventTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  evaluator       User?     @relation(fields: [evaluatedById], references: [id])
 }
 
 // ============================================================
