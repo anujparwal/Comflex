@@ -289,7 +289,7 @@ exports.createTeam = async (req, res, next) => {
         eventId,
         name,
         leaderId: req.user.id,
-        status: 'registered'
+        status: (event.isTeamEvent && event.minTeamSize > 1) ? 'pending' : 'registered'
       }
     });
 
@@ -840,3 +840,184 @@ exports.adjustTeamPoints = async (req, res, next) => {
     return success(res, adj, 201);
   } catch(err) { next(err); }
 };
+
+exports.registerTeam = async (req, res, next) => {
+  try {
+    const { id: eventId, teamId } = req.params;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+
+    const team = await prisma.eventTeam.findUnique({ 
+        where: { id: teamId },
+        include: { members: true }
+    });
+    
+    if (!team) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Team not found.' } });
+
+    if (team.leaderId !== req.user.id) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only team leader can register the team.' } });
+    }
+
+    if (team.status === 'registered') {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Team is already registered.' } });
+    }
+    
+    // Validate team sizes
+    if (team.members.length < event.minTeamSize) {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: `Team must have at least ${event.minTeamSize} members to register.` } });
+    }
+    
+    if (team.members.length > event.maxTeamSize) {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: `Team cannot exceed ${event.maxTeamSize} members.` } });
+    }
+
+    const updatedTeam = await prisma.eventTeam.update({
+        where: { id: teamId },
+        data: { status: 'registered' }
+    });
+
+    return success(res, updatedTeam);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.awardTeamRewards = async (req, res, next) => {
+  try {
+    const { id: eventId, teamId } = req.params;
+    const { credits, badgeId } = req.body;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId }, include: { organizers: true } });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+
+    // Must be admin or event creator/organizer with permissions
+    const isOrganizer = req.user.globalRing === 0 || event.creatorId === req.user.id || event.organizers.some(o => o.userId === req.user.id);
+    if (!isOrganizer) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorized to give rewards.' } });
+
+    const team = await prisma.eventTeam.findUnique({
+      where: { id: teamId },
+      include: { members: true }
+    });
+
+    if (!team) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Team not found.' } });
+    if (team.eventId !== eventId) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Team does not belong to this event.' } });
+
+    let badge = null;
+    if (badgeId) {
+      badge = await prisma.badge.findUnique({ where: { id: badgeId } });
+      if (!badge) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Badge not found.' } });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const member of team.members) {
+        // 1. Grant Credits
+        if (credits && credits > 0) {
+          await tx.user.update({
+            where: { id: member.userId },
+            data: { creditBalance: { increment: credits } }
+          });
+          await tx.transaction.create({
+             data: {
+               senderId: null, // admin/system
+               receiverId: member.userId,
+               amount: credits,
+               type: 'event_reward',
+               referenceId: eventId
+             }
+          });
+        }
+        
+        // 2. Grant Badge
+        if (badgeId) {
+          const alreadyOwns = await tx.userBadge.findUnique({
+             where: { userId_badgeId: { userId: member.userId, badgeId } }
+          });
+          
+          if (!alreadyOwns) {
+            await tx.userBadge.create({
+              data: {
+                userId: member.userId,
+                badgeId,
+                source: 'event'
+              }
+            });
+          }
+        }
+      }
+    });
+
+    return success(res, { message: `Rewards distributed to team ${team.name}.` });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.distributeRewards = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const event = await prisma.event.findUnique({ 
+      where: { id }, 
+      include: { 
+        organizers: true, 
+        teams: { include: { members: true }, orderBy: { points: 'desc' } } 
+      } 
+    });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+    
+    const isOrganizer = req.user.globalRing === 0 || event.creatorId === req.user.id || event.organizers.some(o => o.userId === req.user.id);
+    if (!isOrganizer) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Not authorized to give rewards.' } });
+
+    if (!event.rewardTiers || !Array.isArray(event.rewardTiers) || event.rewardTiers.length === 0) {
+      return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'No reward tiers configured for this event.' } });
+    }
+
+    let distributionCount = 0;
+    await prisma.$transaction(async (tx) => {
+      // Teams are already ordered by points descending
+      const sortedTeams = event.teams.filter(t => t.points > 0); 
+      for (const tier of event.rewardTiers) {
+        const rankIndex = tier.rank - 1; // Rank 1 = Index 0
+        if (rankIndex >= 0 && rankIndex < sortedTeams.length) {
+          const teamToReward = sortedTeams[rankIndex];
+          const credits = parseInt(tier.credits, 10) || 0;
+          const badgeId = tier.badgeId || null;
+
+          for (const member of teamToReward.members) {
+            if (credits > 0) {
+              await tx.user.update({
+                where: { id: member.userId },
+                data: { creditBalance: { increment: credits } }
+              });
+              await tx.transaction.create({
+                 data: {
+                   senderId: null,
+                   receiverId: member.userId,
+                   amount: credits,
+                   type: 'event_reward',
+                   referenceId: id
+                 }
+              });
+            }
+            if (badgeId) {
+              const alreadyOwns = await tx.userBadge.findUnique({
+                 where: { userId_badgeId: { userId: member.userId, badgeId } }
+              });
+              if (!alreadyOwns) {
+                await tx.userBadge.create({
+                  data: { userId: member.userId, badgeId, source: 'event' }
+                });
+              }
+            }
+          }
+          distributionCount++;
+        }
+      }
+    });
+
+    return success(res, { message: `Automated rewards distributed to ${distributionCount} team(s)!` });
+  } catch (err) {
+    next(err);
+  }
+};
+

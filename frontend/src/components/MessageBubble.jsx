@@ -79,7 +79,7 @@ function renderContentWithMentions(content, mentionData = [], onUserClick) {
   return parts.length > 0 ? parts : content;
 }
 
-export default function MessageBubble({ message, currentUserId, permissions = {}, isAdmin, onEdit, onDelete, onPin, onUserClick, groupId, members = [], onReply, onForward, onReact, replyMessage, isFriend }) {
+export default function MessageBubble({ message, currentUserId, permissions = {}, isAdmin, onEdit, onDelete, onPin, onUserClick, groupId, members = [], badgeMap = {}, onReply, onForward, onReact, replyMessage, isFriend }) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const [showReadBy, setShowReadBy] = useState(false);
@@ -184,11 +184,12 @@ export default function MessageBubble({ message, currentUserId, permissions = {}
 
         <div className="flex items-center gap-2 mb-0.5">
           <span className="font-semibold text-sm cursor-pointer hover:underline" style={{ color: ringColor }} onClick={handleAuthorClick}>{author.displayName || 'Unknown'}</span>
-          {/* Friend Status Badge removed */}
           {/* Badges */}
-          {author.displayBadges?.slice(0, 3).map((badge, i) => (
-            <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-bg-card)] text-[var(--color-text-muted)]">{badge}</span>
-          ))}
+          {author.displayBadges?.slice(0, 5).map((badgeId, i) => {
+            const badge = badgeMap[badgeId];
+            if (!badge) return null;
+            return <img key={i} src={badge.imageUrl} alt={badge.name} title={badge.name} className="w-5 h-5 object-cover drop-shadow select-none" />;
+          })}
           <span className="text-xs text-[var(--color-text-muted)]">
             {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>

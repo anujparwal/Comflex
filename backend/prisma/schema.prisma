@@ -66,8 +66,14 @@ model User {
   evaluatedSubmissions EventSubmission[]
   pointAdjustments   TeamPointAdjustment[]
 
-  // Resource Relations
+  // Resources Relations
   resourcesUploaded Resource[]
+
+  // Credits & Badges Relations
+  acquiredBadges    UserBadge[]
+  canManageStore    Boolean   @default(false) // Whether user can manage store (create badges/listings)
+  sentTransactions  Transaction[] @relation("Sender")
+  receivedTransactions Transaction[] @relation("Receiver")
 }
 
 // ============================================================
@@ -80,6 +86,7 @@ model InstitutionConfig {
   domain            String   @default("")
   logoUrl           String?
   isConfigured      Boolean  @default(false) // Gates user registration
+  notesDownloadReward Int    @default(0)     // Credits awarded per resource download
   emailParsingRules Json?    // { pattern, captureGroup, branchCaptureGroup?, branchMapping?, yearOffset }
   cohortConfig      Json?    // { seniorOffset: -1, juniorOffset: +1, seniorAutoElevate: true }
   autoJoinRules     Json?    // [{ matchField: "year"|"branch"|"both", matchValue: "28", groupId: "..." }]
@@ -100,7 +107,7 @@ model CohortGroup {
   type        String           // "primary" | "cross-year" | "custom"
   creatorId   String?  @db.ObjectId // User who created the group (null for system-created)
   ringConfig  Json?            // { ringCount: 5, ringLabels: { 0: "Admin", 1: "Manager", ... } }
-  inviteToken String?  @unique // unique token for invite links
+  inviteToken String?          // unique token for invite links
   createdAt   DateTime @default(now())
 
   // Relations
@@ -285,6 +292,8 @@ model Event {
   // Timer configurations
   autoStart       Boolean  @default(true)
 
+  rewardTiers     Json?    // [{ rank: 1, credits: 500, badgeId: "optional-id" }]
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -447,5 +456,59 @@ model Resource {
 
   subject     ResourceSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   uploader    User            @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// CREDITS & BADGES SYSTEM (Web3 Ledger)
+// ============================================================
+
+model Badge {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  name         String   @unique
+  description  String
+  imageUrl     String
+  isEventBadge Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  storeListings StoreListing[]
+  userBadges    UserBadge[]
+}
+
+model StoreListing {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  badgeId      String   @db.ObjectId
+  price        Int
+  quantity     Int      // -1 for infinite
+  sold         Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  badge        Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+}
+
+model UserBadge {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  badgeId    String   @db.ObjectId
+  acquiredAt DateTime @default(now())
+  source     String   // "store", "event", "admin"
+  
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge      Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId]) // A user should only own one instance of a specific badge
+}
+
+model Transaction {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  senderId    String?  @db.ObjectId // null if admin/system minting
+  receiverId  String   @db.ObjectId
+  amount      Int
+  type        String   // "transfer", "download_reward", "event_reward", "purchase", "admin_mint"
+  referenceId String?  // e.g. Resource ID, Event ID, Chat Message ID
+  createdAt   DateTime @default(now())
+
+  sender      User?    @relation("Sender", fields: [senderId], references: [id])
+  receiver    User     @relation("Receiver", fields: [receiverId], references: [id])
 }
 

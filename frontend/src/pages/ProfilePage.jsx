@@ -4,9 +4,10 @@
  * States: Loading skeleton → Profile view → Edit mode → Save → Confirm.
  */
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { userApi } from '../api/userApi';
+import { storeApi } from '../api/storeApi';
 import { parseIIITLEmail } from '../utils/parseEmail';
 import Layout from '../components/Layout';
 import Avatar from '../components/Avatar';
@@ -22,19 +23,36 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [message, setMessage] = useState('');
+  
+  const [badgeMap, setBadgeMap] = useState({});
+  const [inventory, setInventory] = useState([]);
+  const [selectedBadges, setSelectedBadges] = useState([]);
+
+  useEffect(() => {
+    storeApi.getAllBadges().then(res => {
+      const map = {};
+      res.data.data.forEach(b => map[b.id] = b);
+      setBadgeMap(map);
+    }).catch(() => {});
+  }, []);
 
   // Parse academic info from email
   const academicInfo = useMemo(() => parseIIITLEmail(user?.email), [user?.email]);
 
   // Initialize form when entering edit mode
-  const startEdit = () => {
+  const startEdit = async () => {
     setForm({
       displayName: user?.displayName || '',
       bio: user?.bio || '',
       cfHandle: user?.cfHandle || '',
     });
+    setSelectedBadges(user?.displayBadges || []);
     setEditing(true);
     setMessage('');
+    try {
+      const res = await storeApi.getInventory();
+      setInventory(res.data.data || []);
+    } catch {}
   };
 
   const handleSave = async () => {
@@ -42,6 +60,10 @@ export default function ProfilePage() {
     setMessage('');
     try {
       await userApi.updateProfile(form);
+      const isSame = JSON.stringify(selectedBadges) === JSON.stringify(user?.displayBadges || []);
+      if (!isSame) {
+        await storeApi.setDisplayBadges(selectedBadges);
+      }
       await refreshProfile();
       setEditing(false);
       setMessage('Profile updated successfully!');
@@ -133,6 +155,16 @@ export default function ProfilePage() {
               <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs text-white ring-badge-${Math.min(user.globalRing, 3)}`}>
                 Ring {user.globalRing} · {RING_LABELS[user.globalRing] || 'Restricted'}
               </span>
+              
+              <div className="flex gap-2 mt-3">
+                {user.displayBadges?.map(badgeId => {
+                  const badge = badgeMap[badgeId];
+                  if (!badge) return null;
+                  return (
+                    <img key={badgeId} src={badge.imageUrl} alt={badge.name} title={badge.name} className="w-8 h-8 object-cover drop-shadow" />
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -191,6 +223,34 @@ export default function ProfilePage() {
                   onChange={(e) => setForm({ ...form, cfHandle: e.target.value })}
                   placeholder="your_cf_handle" />
               </div>
+              
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-2">Display Badges (Max 5)</label>
+                <div className="flex flex-wrap gap-3">
+                  {inventory.length === 0 && <p className="text-xs text-[var(--color-text-muted)]">No badges in inventory.</p>}
+                  {Array.from(new Set(inventory.map(i => i.badgeId))).map(badgeId => {
+                    const badgeInfo = badgeMap[badgeId];
+                    if (!badgeInfo) return null;
+                    const isSelected = selectedBadges.includes(badgeId);
+                    return (
+                      <div 
+                        key={badgeId}
+                        onClick={() => {
+                          if (isSelected) {
+                            setSelectedBadges(selectedBadges.filter(id => id !== badgeId));
+                          } else if (selectedBadges.length < 5) {
+                            setSelectedBadges([...selectedBadges, badgeId]);
+                          }
+                        }}
+                        className={`cursor-pointer p-2 rounded-xl border transition-all ${isSelected ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 scale-105' : 'border-transparent bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-card)]'}`}
+                      >
+                        <img src={badgeInfo.imageUrl} title={badgeInfo.name} alt="" className="w-10 h-10 object-cover" />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="flex gap-3">
                 <button onClick={handleSave} disabled={saving} className="btn btn-primary">
                   {saving ? <span className="spinner" /> : 'Save Changes'}

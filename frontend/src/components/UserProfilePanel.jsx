@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { userApi } from '../api/userApi';
 import { friendApi } from '../api/friendApi';
+import { storeApi } from '../api/storeApi';
 import Avatar from './Avatar';
 
 const RING_LABELS = ['Admin', 'Manager', 'Elevated', 'Member'];
@@ -16,6 +17,8 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferAmount, setTransferAmount] = useState('');
 
   useEffect(() => {
     if (!userId) return;
@@ -46,6 +49,23 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
       setProfile(res.data.data);
     } catch (err) {
       setMessage(err.response?.data?.error?.message || 'Action failed.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleTransfer = async () => {
+    const amount = parseInt(transferAmount, 10);
+    if (!amount || amount <= 0) return setMessage('Enter a valid amount');
+    setActionLoading(true);
+    setMessage('');
+    try {
+      await storeApi.transferCredits(userId, amount);
+      setMessage(`Successfully sent ${amount} credits.`);
+      setShowTransfer(false);
+      setTransferAmount('');
+    } catch (err) {
+      setMessage(err.response?.data?.error?.message || 'Transfer failed.');
     } finally {
       setActionLoading(false);
     }
@@ -195,6 +215,23 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
                   {actionLoading ? <span className="spinner" /> : '👋 Send Friend Request'}
                 </button>
               )}
+              
+              <div className="pt-2 border-t border-[var(--color-border)]">
+                {showTransfer ? (
+                  <div className="flex flex-col gap-2">
+                    <input type="number" placeholder="Amount..." min="1" value={transferAmount} onChange={e => setTransferAmount(e.target.value)}
+                           className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] p-2 rounded text-sm focus:outline-[var(--color-accent)]" />
+                    <div className="flex gap-2">
+                      <button onClick={handleTransfer} disabled={actionLoading} className="btn bg-[var(--color-success)] text-white w-full text-sm">Send</button>
+                      <button onClick={() => setShowTransfer(false)} className="btn btn-secondary w-full text-sm">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowTransfer(true)} className="btn btn-secondary w-full text-sm">
+                    🪙 Send Credits
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

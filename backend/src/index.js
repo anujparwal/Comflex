@@ -25,6 +25,7 @@ const friendRoutes = require('./routes/friends');
 const dmRoutes = require('./routes/dm');
 const eventRoutes = require('./routes/events');
 const resourceRoutes = require('./routes/resources');
+const storeRoutes = require('./routes/store');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -62,6 +63,7 @@ app.use('/api/v1/friends', friendRoutes);
 app.use('/api/v1/dm', dmRoutes);
 app.use('/api/v1/events', eventRoutes);
 app.use('/api/v1/resources', resourceRoutes);
+app.use('/api/v1/store', storeRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

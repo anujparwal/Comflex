@@ -668,6 +668,15 @@ function UsersTab() {
     }
   };
 
+  const handleToggleManageStore = async (userId, current) => {
+    try {
+      await adminApi.setUserPermissions(userId, { canManageStore: !current });
+      fetchUsers(pagination.page);
+    } catch (err) {
+      alert(err.response?.data?.error?.message || 'Failed to update permissions.');
+    }
+  };
+
   const handleDeleteUser = async (userId, displayName) => {
     if (!confirm(`⚠️ Permanently delete "${displayName}"?\n\nThis will remove their account, messages, group memberships, friendships, and DMs. This cannot be undone.`)) return;
     try {
@@ -782,6 +791,17 @@ function UsersTab() {
                   title={u.canManageResources ? 'Click to revoke resource management' : 'Click to grant resource management'}
                 >
                   {u.canManageResources ? '✅ Resources' : '🚫 Resources'}
+                </button>
+                <button
+                  onClick={() => handleToggleManageStore(u.id, u.canManageStore)}
+                  className={`text-[10px] px-2 py-1 rounded-lg transition-colors flex-shrink-0 ${
+                    u.canManageStore
+                      ? 'chip-accent border border-[rgba(16,185,129,0.3)]'
+                      : 'bg-[var(--color-bg-card)] text-[var(--color-text-muted)] border border-[var(--color-border)]'
+                  }`}
+                  title={u.canManageStore ? 'Click to revoke store management' : 'Click to grant store management'}
+                >
+                  {u.canManageStore ? '✅ Store' : '🚫 Store'}
                 </button>
               </div>
 
