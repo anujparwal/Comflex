@@ -12,4 +12,6 @@ export const eventApi = {
   inviteToTeam: (eventId, teamId, userId) => client.post(`/events/${eventId}/teams/${teamId}/invites`, { userId }),
   acceptTeamInvite: (eventId, inviteId) => client.post(`/events/${eventId}/teams/invites/${inviteId}/accept`),
   rejectTeamInvite: (eventId, inviteId) => client.post(`/events/${eventId}/teams/invites/${inviteId}/reject`),
+  addOrganizer: (eventId, data) => client.post(`/events/${eventId}/organizers`, data),
+  getLeaderboard: (eventId) => client.get(`/events/${eventId}/leaderboard`),
 };

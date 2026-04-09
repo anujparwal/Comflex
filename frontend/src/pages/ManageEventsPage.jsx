@@ -16,11 +16,17 @@ export default function ManageEventsPage() {
     title: '',
     description: '',
     startDate: '',
+    durationHours: 0,
+    durationMinutes: 0,
+    taskViewMode: 'all',
+    scoreMode: 'constant',
+    wrongSubmissionPenalty: 0,
     category: '',
     targetTags: '',
     isTeamEvent: false,
     minTeamSize: 1,
-    maxTeamSize: 4
+    maxTeamSize: 4,
+    autoStart: true
   });
   const [message, setMessage] = useState('');
 
@@ -58,8 +64,8 @@ export default function ManageEventsPage() {
       
       // Reset form
       setForm({
-        title: '', description: '', startDate: '', category: '', targetTags: '', 
-        isTeamEvent: false, minTeamSize: 1, maxTeamSize: 4
+        title: '', description: '', startDate: '', durationHours: 0, durationMinutes: 0, taskViewMode: 'all', scoreMode: 'constant', wrongSubmissionPenalty: 0, category: '', targetTags: '', 
+        isTeamEvent: false, minTeamSize: 1, maxTeamSize: 4, autoStart: true
       });
       
       fetchEvents();
@@ -131,6 +137,35 @@ export default function ManageEventsPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Duration</label>
+                <div className="flex gap-1">
+                  <input type="number" min="0" value={form.durationHours} onChange={e => setForm({...form, durationHours: Number(e.target.value)})} className="w-1/2 text-sm text-center px-1" placeholder="Hrs" title="Hours" />
+                  <span className="self-center">:</span>
+                  <input type="number" min="0" max="59" value={form.durationMinutes} onChange={e => setForm({...form, durationMinutes: Number(e.target.value)})} className="w-1/2 text-sm text-center px-1" placeholder="Min" title="Minutes" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Task View Mode</label>
+                <select value={form.taskViewMode} onChange={e => setForm({...form, taskViewMode: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg px-2 py-2">
+                  <option value="all">All At Once</option>
+                  <option value="dynamic">Dynamic Unlocking</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Score Mode</label>
+                <select value={form.scoreMode} onChange={e => setForm({...form, scoreMode: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg px-2 py-2">
+                  <option value="constant">Constant</option>
+                  <option value="dynamic">Dynamic Decay</option>
+                </select>
+              </div>
+              <div>
+                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1" title="Penalty points deducted for wrong submission globally">Wrong Penalty</label>
+                 <input type="number" min="0" value={form.wrongSubmissionPenalty} onChange={e => setForm({...form, wrongSubmissionPenalty: Number(e.target.value)})} className="w-full text-sm" placeholder="e.g. 50 (Codeforces standard pts)" />
+              </div>
+            </div>
+
             <div className="mb-4">
                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Description</label>
                <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Event details..." className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg px-3 py-2 min-h-[80px]" />
@@ -154,6 +189,14 @@ export default function ManageEventsPage() {
                    </div>
                  </>
                )}
+            </div>
+
+            <div className="flex items-center gap-6 mb-6 p-4 bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl">
+               <label className="flex items-center gap-2 text-sm font-medium">
+                  <input type="checkbox" checked={form.autoStart} onChange={e => setForm({...form, autoStart: e.target.checked})} className="rounded text-[var(--color-accent)] focus:ring-[var(--color-accent)]" />
+                  Auto-start event when Start Date arrives
+               </label>
+               <span className="text-xs text-[var(--color-text-secondary)]">If disabled, you will need to manually click 'Start Event' on the event page.</span>
             </div>
 
             <button type="submit" disabled={creating || !form.title || !form.startDate || !form.category} className="btn btn-primary w-full md:w-auto">
