@@ -14,4 +14,11 @@ export const eventApi = {
   rejectTeamInvite: (eventId, inviteId) => client.post(`/events/${eventId}/teams/invites/${inviteId}/reject`),
   addOrganizer: (eventId, data) => client.post(`/events/${eventId}/organizers`, data),
   getLeaderboard: (eventId) => client.get(`/events/${eventId}/leaderboard`),
+  createTask: (eventId, data) => client.post(`/events/${eventId}/tasks`, data),
+  listTasks: (eventId) => client.get(`/events/${eventId}/tasks`),
+  deleteTask: (eventId, taskId) => client.delete(`/events/${eventId}/tasks/${taskId}`),
+  submitTask: (eventId, taskId, content) => client.post(`/events/${eventId}/tasks/${taskId}/submit`, { content }),
+  listSubmissions: (eventId, taskId) => client.get(`/events/${eventId}/tasks/${taskId}/submissions`),
+  evaluateSubmission: (eventId, submissionId, data) => client.post(`/events/${eventId}/submissions/${submissionId}/evaluate`, data),
+  adjustTeamPoints: (eventId, teamId, data) => client.post(`/events/${eventId}/teams/${teamId}/points`, data),
 };

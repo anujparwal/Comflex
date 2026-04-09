@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/Layout';
@@ -57,6 +57,18 @@ export default function EventDetailsPage() {
     canEditDetails: false, canChangeTiming: false, canChangeDurationWhileRunning: false, canChangePenalty: false
   });
 
+  // Task & Leaderboard Management
+  const [tasks, setTasks] = useState([]);
+  const [taskForm, setTaskForm] = useState({ title: '', description: '', order: 1, basePoints: 100, submissionType: 'text', isAutoEvaluated: false, exactText: '', decayPercentage: 0, wrongSubmissionPenalty: 0 });
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskSubmissions, setTaskSubmissions] = useState({});
+  const [selectedTaskIdx, setSelectedTaskIdx] = useState(-1);
+  const [submissionCode, setSubmissionCode] = useState('');
+  const [pointAdjustData, setPointAdjustData] = useState({ teamId: '', pointsAdded: 0, reason: '' });
+  const [leaderboardHistoryOpen, setLeaderboardHistoryOpen] = useState(null);
+  const [gradingSubId, setGradingSubId] = useState(null);
+  const [gradeScore, setGradeScore] = useState(0);
+
   const fetchEventData = useCallback(async () => {
     setLoading(true);
     try {
@@ -73,16 +85,30 @@ export default function EventDetailsPage() {
         minTeamSize: ev.minTeamSize || 1, maxTeamSize: ev.maxTeamSize || 1
       });
       
-      if (ev.isTeamEvent) {
-        const { data: teamsRes } = await eventApi.listTeams(id);
-        setTeams(teamsRes.data);
+      const { data: teamsRes } = await eventApi.listTeams(id);
+      const fetchedTeams = teamsRes.data;
+      setTeams(fetchedTeams);
+      
+      const isOrg = ev.creatorId === user?.id || ev.organizers?.some(o => o.userId === user?.id);
+      const inTeam = fetchedTeams.some(t => t.members.some(m => m.userId === user?.id));
+      
+      if (isOrg || inTeam) {
+          try {
+             const { data: tasksRes } = await eventApi.listTasks(id);
+             setTasks(tasksRes.data);
+          } catch(err) { console.error('Failed to fetch tasks', err); }
       }
+
+      try {
+         const { data: lbRes } = await eventApi.getLeaderboard(id);
+         setLeaderboard(lbRes.data);
+      } catch(err) { console.error('Failed to fetch leaderboard', err); }
     } catch {
       console.error('Failed to fetch event data');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, user?.id]);
 
   useEffect(() => {
     fetchEventData();
@@ -198,6 +224,94 @@ export default function EventDetailsPage() {
     } finally { setActionLoading(false); }
   };
 
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+    setMessage('');
+    setActionLoading(true);
+    try {
+       const payload = {
+         ...taskForm,
+         submissionConfig: taskForm.isAutoEvaluated ? { exactText: taskForm.exactText } : null
+       };
+       await eventApi.createTask(id, payload);
+       setMessage('');
+       setShowTaskForm(false);
+       setTaskForm({ title: '', description: '', order: tasks.length + 2, basePoints: 100, submissionType: 'text', isAutoEvaluated: false, exactText: '', decayPercentage: 0, wrongSubmissionPenalty: 0 });
+       fetchEventData();
+    } catch(err) {
+       setMessage(err.response?.data?.error?.message || 'Failed to create task.');
+    } finally { setActionLoading(false); }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!window.confirm('Are you sure you want to delete this task?')) return;
+    setActionLoading(true);
+    try {
+      await eventApi.deleteTask(id, taskId);
+      fetchEventData();
+    } catch(err) {
+      alert(err.response?.data?.error?.message || 'Failed to delete task.');
+    } finally { setActionLoading(false); }
+  };
+
+  const loadSubmissionsForTask = async (taskId) => {
+    try {
+      const { data } = await eventApi.listSubmissions(id, taskId);
+      setTaskSubmissions(prev => ({ ...prev, [taskId]: data.data }));
+    } catch(err) { console.error('Failed to load subs', err); }
+  };
+
+  const handleSubmitTask = async (taskId) => {
+    if (!submissionCode.trim()) return;
+    setActionLoading(true);
+    try {
+      await eventApi.submitTask(id, taskId, { text: submissionCode });
+      setMessage('Task submitted!');
+      setSubmissionCode('');
+      fetchEventData();
+    } catch(err) {
+      setMessage(err.response?.data?.error?.message || 'Submission failed.');
+    } finally { setActionLoading(false); }
+  };
+
+  const handleEvaluateTask = async (subId, status) => {
+    setActionLoading(true);
+    try {
+      await eventApi.evaluateSubmission(id, subId, { status, scoreAwarded: gradeScore });
+      setMessage('Evaluated successfully.');
+      setGradingSubId(null);
+      // reload subs
+      if (tasks[selectedTaskIdx]) loadSubmissionsForTask(tasks[selectedTaskIdx].id);
+      fetchEventData();
+    } catch(err) {
+      setMessage(err.response?.data?.error?.message || 'Failed to evaluate.');
+    } finally { setActionLoading(false); }
+  };
+
+  const handleAdjustPoints = async (e) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      await eventApi.adjustTeamPoints(id, pointAdjustData.teamId, { pointsAdded: pointAdjustData.pointsAdded, reason: pointAdjustData.reason });
+      setMessage('Points adjusted.');
+      setPointAdjustData({ teamId: '', pointsAdded: 0, reason: '' });
+      fetchEventData();
+    } catch(err) {
+      setMessage(err.response?.data?.error?.message || 'Failed to adjust points.');
+    } finally { setActionLoading(false); }
+  };
+
+  const handleForceState = async (status) => {
+    setActionLoading(true);
+    try {
+      await eventApi.updateEvent(id, { status });
+      fetchEventData();
+    } catch(err) {
+      console.error(err);
+      setMessage('Failed to change event state.');
+    } finally { setActionLoading(false); }
+  };
+
   if (loading) {
     return <Layout><div className="p-8">Loading event...</div></Layout>;
   }
@@ -294,24 +408,13 @@ export default function EventDetailsPage() {
                     </>
                   )}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
                   <div>
                     <label className="block text-sm mb-1">Task View Mode</label>
                     <select value={editForm.taskViewMode} onChange={e => setEditForm({...editForm, taskViewMode: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg p-2">
                       <option value="all">All At Once</option>
                       <option value="dynamic">Dynamic Unlocking</option>
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm mb-1">Score Mode</label>
-                    <select value={editForm.scoreMode} onChange={e => setEditForm({...editForm, scoreMode: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg p-2">
-                       <option value="constant">Constant</option>
-                       <option value="dynamic">Dynamic Decay</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm mb-1" title="Penalty points per wrong submission">Wrong Penalty</label>
-                    <input type="number" min="0" value={editForm.wrongSubmissionPenalty} onChange={e => setEditForm({...editForm, wrongSubmissionPenalty: Number(e.target.value)})} className="w-full text-sm" />
                   </div>
                 </div>
                 <div>
@@ -546,8 +649,167 @@ export default function EventDetailsPage() {
           </div>
         )}
 
+        {/* TASKS SECTION */}
+        {(isOrganizer || (userTeam && (isOngoing || isCompleted))) && (
+          <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm mt-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold gradient-text">Event Tasks</h3>
+              {isOrganizer && !isCompleted && (
+                <button onClick={() => { setShowTaskForm(!showTaskForm); setMessage(''); }} className="btn btn-secondary text-sm px-3 py-1.5">
+                   {showTaskForm ? 'Cancel Task' : 'Create Task'}
+                </button>
+              )}
+            </div>
+            
+            {isOrganizer && showTaskForm && (
+                <form onSubmit={handleCreateTask} className="mb-6 p-4 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl space-y-4">
+                   <div className="flex justify-between items-center">
+                     <h4 className="font-bold text-sm text-[var(--color-text-secondary)] uppercase">New Task</h4>
+                     <button type="button" onClick={() => setShowTaskForm(false)} className="text-[var(--color-text-muted)] hover:text-white px-2">✕</button>
+                   </div>
+                   {message && <div className="p-3 bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/20 text-[var(--color-danger)] rounded-lg text-sm font-semibold">{message}</div>}
+                   <div>
+                     <label className="block text-sm mb-1">Task Title</label>
+                     <input type="text" value={taskForm.title} onChange={e => setTaskForm({...taskForm, title: e.target.value})} className="w-full text-sm" required />
+                   </div>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                     <div>
+                       <label className="block text-sm mb-1">Base Points</label>
+                       <input type="number" min="0" value={taskForm.basePoints} onChange={e => setTaskForm({...taskForm, basePoints: Number(e.target.value)})} className="w-full text-sm" required />
+                     </div>
+                     <div>
+                       <label className="block text-sm mb-1">Format</label>
+                       <select value={taskForm.submissionType} onChange={e => setTaskForm({...taskForm, submissionType: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] p-2 rounded-lg">
+                         <option value="text">Text</option>
+                         <option value="url">URL Link</option>
+                         <option value="file">File (Drive Link)</option>
+                       </select>
+                     </div>
+                     <div>
+                       <label className="block text-sm mb-1">Order</label>
+                       <input type="number" min="1" value={taskForm.order} onChange={e => setTaskForm({...taskForm, order: Number(e.target.value)})} className="w-full text-sm" required />
+                     </div>
+                   </div>
+                   <div className="flex items-center gap-4 bg-[var(--color-bg-card)] border border-[var(--color-border)] p-3 rounded-xl">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={taskForm.isAutoEvaluated} onChange={e => setTaskForm({...taskForm, isAutoEvaluated: e.target.checked})} className="rounded text-[var(--color-accent)]" />
+                        Auto Evaluate (Specific Answer)
+                      </label>
+                      <span className="text-xs text-[var(--color-text-muted)] italic">
+                        {taskForm.isAutoEvaluated 
+                           ? "User will be automatically graded based on the specific answer below."
+                           : "Self Assess: Add only base points while grading. The answer can be self assessed by any organiser irrespective of the creator."}
+                      </span>
+                   </div>
+                   {taskForm.isAutoEvaluated && (
+                     <div>
+                       <label className="block text-sm mb-1">Specific Expected Answer (Exact Text)</label>
+                       <input type="text" value={taskForm.exactText} onChange={e => setTaskForm({...taskForm, exactText: e.target.value})} className="w-full text-sm font-mono text-[var(--color-accent)]" required />
+                     </div>
+                   )}
+                   
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                       <label className="block text-sm mb-1">Time Degradation (% / minute)</label>
+                       <input type="number" min="0" step="0.1" value={taskForm.decayPercentage} onChange={e => setTaskForm({...taskForm, decayPercentage: Number(e.target.value)})} className="w-full text-sm" />
+                       <span className="text-xs text-[var(--color-text-muted)] mt-1 block">e.g., 1 means 1% loss per minute. Points degradation will be automatically calculated after assessment.</span>
+                     </div>
+                     <div>
+                       <label className="block text-sm mb-1">Wrong Penalty (Points deducted)</label>
+                       <input type="number" min="0" value={taskForm.wrongSubmissionPenalty} onChange={e => setTaskForm({...taskForm, wrongSubmissionPenalty: Number(e.target.value)})} className="w-full text-sm" />
+                     </div>
+                   </div>
+                   
+                   <div>
+                     <label className="block text-sm mb-1">Task Description / Instructions</label>
+                     <textarea value={taskForm.description} onChange={e => setTaskForm({...taskForm, description: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] p-2 rounded-lg" rows="4" required />
+                   </div>
+                   <button type="submit" disabled={actionLoading} className="btn btn-primary w-full text-sm">Create Task</button>
+                </form>
+            )}
+
+            {tasks.length === 0 ? (
+               <div className="text-sm text-[var(--color-text-secondary)] italic">No tasks available yet.</div>
+            ) : (
+               <div className="space-y-4">
+                 {tasks.map((task, idx) => (
+                   <div key={task.id} className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] p-4 rounded-xl">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-bold text-lg">{task.order}. {task.title}</h4>
+                        <div className="flex items-center gap-3">
+                          <div className="text-sm font-mono font-bold text-[var(--color-accent)]">{task.basePoints} pts</div>
+                          {isOrganizer && (
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }} 
+                                className="text-xs px-2 py-1 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded hover:bg-[var(--color-danger)] hover:text-white transition-colors"
+                             >
+                                Delete
+                             </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm text-[var(--color-text-primary)] whitespace-pre-wrap mb-4">{task.description}</p>
+                      
+                      {userTeam && !isOrganizer && isOngoing && (
+                        <div className="bg-[var(--color-bg-card)] p-3 rounded-lg border border-[var(--color-border)] mt-4">
+                           <h5 className="text-xs font-bold uppercase mb-2">Submit Answer ({task.submissionType})</h5>
+                           {task.submissionType === 'file' && <p className="text-xs text-[var(--color-text-muted)] mb-2 italic">Please upload your file to Drive and paste the shareable link below.</p>}
+                           <div className="flex gap-2">
+                             <input type="text" value={submissionCode} onChange={e => setSubmissionCode(e.target.value)} placeholder="Type/paste your answer or link here..." className="flex-1 text-sm bg-[var(--color-bg-primary)]" />
+                             <button onClick={() => handleSubmitTask(task.id)} disabled={actionLoading || !submissionCode.trim()} className="btn btn-primary text-sm shrink-0 px-4">Submit</button>
+                           </div>
+                        </div>
+                      )}
+
+                      {isOrganizer && (
+                        <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+                           <button onClick={() => { setSelectedTaskIdx(idx); loadSubmissionsForTask(task.id); }} className="text-xs font-bold text-[var(--color-accent)] hover:underline uppercase">
+                             &darr; View Submissions
+                           </button>
+                           {selectedTaskIdx === idx && taskSubmissions[task.id] && (
+                             <div className="mt-4 space-y-2">
+                               {taskSubmissions[task.id].length === 0 ? (
+                                 <p className="text-xs text-[var(--color-text-muted)]">No submissions yet.</p>
+                               ) : (
+                                 taskSubmissions[task.id].map(sub => (
+                                   <div key={sub.id} className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] p-3 rounded-lg text-sm flex flex-col md:flex-row justify-between items-start gap-4">
+                                      <div className="flex-1">
+                                        <div className="font-bold">{sub.team.name}</div>
+                                        <div className="text-[var(--color-text-secondary)] font-mono mt-1 break-all bg-[var(--color-bg-primary)] p-2 rounded">
+                                          {sub.content?.text || JSON.stringify(sub.content)}
+                                        </div>
+                                        <div className="text-xs text-[var(--color-text-muted)] mt-1">Status: <span className="font-bold capitalize">{sub.status}</span></div>
+                                      </div>
+                                      
+                                      {!task.isAutoEvaluated && sub.status === 'pending' && (
+                                        <div className="flex flex-col gap-2 w-full md:w-32 shrink-0">
+                                          {gradingSubId !== sub.id ? (
+                                             <button onClick={() => { setGradingSubId(sub.id); setGradeScore(task.basePoints); }} className="btn btn-secondary text-xs w-full">Grade</button>
+                                          ) : (
+                                             <div className="flex flex-col gap-1 w-full">
+                                               <input type="number" min="0" value={gradeScore} onChange={e => setGradeScore(Number(e.target.value))} className="text-xs w-full text-center p-1 rounded border border-[var(--color-border)] bg-[var(--color-bg-primary)]" title="Base points to award" />
+                                               <button onClick={() => handleEvaluateTask(sub.id, 'correct')} className="btn btn-primary text-xs w-full bg-[var(--color-success)] border-[var(--color-success)] text-white hover:bg-[var(--color-success)]">Correct</button>
+                                               <button onClick={() => handleEvaluateTask(sub.id, 'wrong')} className="btn btn-secondary text-xs w-full text-[var(--color-danger)] border-[var(--color-danger)]">Wrong</button>
+                                             </div>
+                                          )}
+                                        </div>
+                                      )}
+                                   </div>
+                                 ))
+                               )}
+                             </div>
+                           )}
+                        </div>
+                      )}
+                   </div>
+                 ))}
+               </div>
+            )}
+          </div>
+        )}
+
         {/* LEADERBOARD SECTION */}
-        {event.isTeamEvent && (isOngoing || isCompleted) && (
+        {(isOngoing || isCompleted || isOrganizer) && (
           <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm mt-6">
             <h3 className="text-xl font-bold mb-4 gradient-text">Live Leaderboard</h3>
             {leaderboard.length === 0 ? (
@@ -560,15 +822,67 @@ export default function EventDetailsPage() {
                       <th className="p-3">Rank</th>
                       <th className="p-3">Team</th>
                       <th className="p-3 text-right">Score</th>
+                      {isOrganizer && <th className="p-3 text-right">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {leaderboard.map((t, i) => (
-                      <tr key={t.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-bg-primary)] transition-colors">
-                        <td className="p-3 font-bold">#{i + 1}</td>
-                        <td className="p-3">{t.name}</td>
-                        <td className="p-3 text-right font-mono font-bold text-[var(--color-accent)]">{t.score}</td>
-                      </tr>
+                      <React.Fragment key={t.id}>
+                        <tr className="border-b border-[var(--color-border)] hover:bg-[var(--color-bg-primary)] transition-colors">
+                          <td className="p-3 font-bold">#{i + 1}</td>
+                          <td className="p-3 cursor-pointer hover:underline text-[var(--color-accent)]" onClick={() => setLeaderboardHistoryOpen(leaderboardHistoryOpen === t.id ? null : t.id)} title="Click to view history">
+                            {t.name}
+                          </td>
+                          <td className="p-3 text-right font-mono font-bold text-[var(--color-text-primary)]">{t.score}</td>
+                          {isOrganizer && (
+                             <td className="p-3 text-right">
+                               {pointAdjustData.teamId === t.id ? (
+                                 <form onSubmit={handleAdjustPoints} className="flex flex-col gap-2 items-end min-w-[200px]">
+                                    <div className="flex gap-2 items-center w-full justify-end">
+                                      <span className="text-xs text-[var(--color-text-secondary)]">Pts (+/-)</span>
+                                      <input type="number" value={pointAdjustData.pointsAdded} onChange={e => setPointAdjustData({...pointAdjustData, pointsAdded: parseInt(e.target.value)||0})} className="w-20 text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] p-1.5 rounded-lg text-right text-[var(--color-text-primary)]" placeholder="0" required />
+                                    </div>
+                                    <input type="text" value={pointAdjustData.reason} onChange={e => setPointAdjustData({...pointAdjustData, reason: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] p-1.5 rounded-lg text-[var(--color-text-primary)]" placeholder="Reason (optional)" />
+                                    <div className="flex gap-2 w-full justify-end mt-1">
+                                      <button type="submit" disabled={actionLoading} className="text-xs btn btn-primary px-3 py-1.5 w-full">Save</button>
+                                      <button type="button" onClick={() => setPointAdjustData({ teamId: '', pointsAdded: 0, reason: '' })} className="text-xs btn btn-secondary px-3 py-1.5 shrink-0">Cancel</button>
+                                    </div>
+                                 </form>
+                               ) : (
+                                 <button onClick={() => setPointAdjustData({ teamId: t.id, pointsAdded: 0, reason: '' })} className="text-xs btn btn-secondary px-3 py-1.5 whitespace-nowrap">+/- Pts</button>
+                               )}
+                             </td>
+                          )}
+                        </tr>
+                        {leaderboardHistoryOpen === t.id && t.history && (
+                          <tr className="bg-[var(--color-bg-primary)]">
+                             <td colSpan={isOrganizer ? "4" : "3"} className="p-4 border-b border-[var(--color-border)]">
+                                <div className="text-sm font-semibold mb-2">Point History for {t.name}</div>
+                                {t.history.length === 0 ? (
+                                   <div className="text-xs text-[var(--color-text-muted)] italic">No points history available.</div>
+                                ) : (
+                                   <ul className="space-y-1">
+                                      {t.history.map((h, hIdx) => (
+                                         <li key={hIdx} className="text-xs flex justify-between items-center bg-[var(--color-bg-card)] p-2 rounded border border-[var(--color-border)]">
+                                            <div>
+                                              {h.type === 'submission' ? (
+                                                 <span>Task: <strong>{h.taskTitle}</strong> ({h.status})</span>
+                                              ) : (
+                                                 <span>Admin Adjustment by {h.awardedBy} {h.reason ? `- "${h.reason}"` : ''}</span>
+                                              )}
+                                              <span className="text-[var(--color-text-muted)] ml-2">{new Date(h.date).toLocaleString()}</span>
+                                            </div>
+                                            <div className={`font-mono font-bold ${h.scoreChange >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                                               {h.scoreChange > 0 ? '+' : ''}{h.scoreChange}
+                                            </div>
+                                         </li>
+                                      ))}
+                                   </ul>
+                                )}
+                             </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
