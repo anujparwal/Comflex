@@ -58,6 +58,7 @@ async function register(email, password, displayName) {
       hasPassword: true,
       cohortTags: [],
       displayBadges: [],
+      creditBalance: config.defaultCredits ?? 0,
     },
   });
 
@@ -139,6 +140,7 @@ async function googleLogin(idToken) {
           globalRing: 3,
           cohortTags: [],
           displayBadges: [],
+          creditBalance: config.defaultCredits ?? 0,
         },
       });
 

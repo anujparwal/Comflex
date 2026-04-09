@@ -61,14 +61,14 @@ function InstitutionTab() {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', domain: '' });
+  const [form, setForm] = useState({ name: '', domain: '', defaultCredits: 0 });
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     adminApi.getInstitution().then((res) => {
       const data = res.data.data;
       setConfig(data);
-      setForm({ name: data?.name || '', domain: data?.domain || '' });
+      setForm({ name: data?.name || '', domain: data?.domain || '', defaultCredits: data?.defaultCredits ?? 0 });
     }).catch(() => setMessage('Failed to load config.'))
       .finally(() => setLoading(false));
   }, []);
@@ -99,6 +99,10 @@ function InstitutionTab() {
       <div>
         <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Email Domain</label>
         <input type="text" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} />
+      </div>
+      <div>
+        <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Default Credits for New Users</label>
+        <input type="number" value={form.defaultCredits} onChange={(e) => setForm({ ...form, defaultCredits: e.target.value })} min={0} />
       </div>
       <div className="flex items-center gap-3">
         <span className="text-sm text-[var(--color-text-muted)]">Status:</span>
