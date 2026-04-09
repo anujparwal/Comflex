@@ -87,6 +87,7 @@ export default function Layout({ children }) {
     { path: '/groups', label: 'Groups', icon: '💬', badge: totalUnread.groups },
     { path: '/friends', label: 'Friends', icon: '👥' },
     { path: '/messages', label: 'Messages', icon: '✉️', badge: totalUnread.dms },
+    { path: '/resources', label: 'Resources', icon: '📚' },
     { path: '/events', label: 'Events', icon: '📅' },
     ...(user?.globalRing <= 1 || user?.canCreateEvents ? [{ path: '/manage-events', label: 'Manage Events', icon: '📝' }] : []),
     ...(isAdmin ? [{ path: '/admin', label: 'Admin Dashboard', icon: '⚙️' }] : []),

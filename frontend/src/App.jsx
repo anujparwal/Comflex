@@ -33,6 +33,7 @@ import EventsPage from './pages/EventsPage';
 import ManageEventsPage from './pages/ManageEventsPage';
 import EventDetailsPage from './pages/EventDetailsPage';
 import JoinGroupPage from './pages/JoinGroupPage';
+import ResourcesPage from './pages/ResourcesPage';
 
 export default function App() {
   return (
@@ -123,6 +124,13 @@ export default function App() {
           <Route path="/events/:id" element={
             <ProtectedRoute>
               <EventDetailsPage />
+            </ProtectedRoute>
+          } />
+
+          {/* Resources */}
+          <Route path="/resources" element={
+            <ProtectedRoute>
+              <ResourcesPage />
             </ProtectedRoute>
           } />
 

@@ -43,6 +43,7 @@ model User {
   // Admin-delegated permissions
   canCreateGroups       Boolean  @default(false)
   canCreateEvents       Boolean  @default(false)
+  canManageResources    Boolean  @default(false)
 
   // Session & security tokens
   refreshToken     String?  // hashed refresh token
@@ -62,6 +63,9 @@ model User {
   teamsLed          EventTeam[]        @relation("TeamLeader")
   eventMemberships  EventTeamMember[]
   eventTeamInvites  EventTeamInvite[]
+
+  // Resource Relations
+  resourcesUploaded Resource[]
 }
 
 // ============================================================
@@ -337,3 +341,36 @@ model EventTeamInvite {
 
   @@unique([teamId, invitedUserId])
 }
+
+// ============================================================
+// RESOURCES
+// ============================================================
+
+model ResourceSubject {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  category    String   // "Academics" | "Technical"
+  subCategory String?  // "Notes" | "Past_Year_Papers" (for Academics)
+  yearGroup   String?  // "This Year" | "Last Year" (for Academics)
+  createdAt   DateTime @default(now())
+  
+  resources   Resource[]
+
+  @@unique([name, category, subCategory, yearGroup])
+}
+
+model Resource {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String?
+  subjectId   String   @db.ObjectId
+  fileUrl     String
+  fileName    String
+  fileSize    Int
+  mimetype    String
+  uploaderId  String   @db.ObjectId
+  createdAt   DateTime @default(now())
+
+  subject     ResourceSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  uploader    User            @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+}
+

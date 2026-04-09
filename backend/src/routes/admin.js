@@ -664,6 +664,9 @@ router.patch(
       if (req.body.canCreateEvents !== undefined) {
         updateData.canCreateEvents = Boolean(req.body.canCreateEvents);
       }
+      if (req.body.canManageResources !== undefined) {
+        updateData.canManageResources = Boolean(req.body.canManageResources);
+      }
 
       const updated = await prisma.user.update({
         where: { id: userId },
@@ -674,6 +677,7 @@ router.patch(
         id: updated.id,
         canCreateGroups: updated.canCreateGroups,
         canCreateEvents: updated.canCreateEvents,
+        canManageResources: updated.canManageResources,
       });
     } catch (err) {
       next(err);
