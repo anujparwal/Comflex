@@ -882,3 +882,116 @@ exports.registerTeam = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.awardTeamRewards = async (req, res, next) => {
+  try {
+    const { id: eventId, teamId } = req.params;
+    const { credits, badgeId } = req.body;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId }, include: { organizers: true } });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+
+    const isOrganizer = event.creatorId === req.user.id || event.organizers.some(o => o.userId === req.user.id) || req.user.globalRing === 0;
+    if (!isOrganizer) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only organizers can award rewards.' } });
+
+    const team = await prisma.eventTeam.findUnique({ where: { id: teamId }, include: { members: true } });
+    if (!team) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Team not found.' } });
+
+    const results = [];
+
+    for (const member of team.members) {
+      if (credits && credits > 0) {
+        await prisma.user.update({
+          where: { id: member.userId },
+          data: { creditBalance: { increment: credits } }
+        });
+        await prisma.transaction.create({
+          data: {
+            receiverId: member.userId,
+            amount: credits,
+            type: 'event_reward',
+            referenceId: eventId
+          }
+        });
+      }
+
+      if (badgeId) {
+        await prisma.userBadge.upsert({
+          where: { userId_badgeId: { userId: member.userId, badgeId } },
+          update: {},
+          create: { userId: member.userId, badgeId, source: 'event' }
+        });
+      }
+
+      results.push({ userId: member.userId, credits: credits || 0, badgeId: badgeId || null });
+    }
+
+    return success(res, { teamId, rewards: results }, 201);
+  } catch (err) { next(err); }
+};
+
+exports.distributeRewards = async (req, res, next) => {
+  try {
+    const { id: eventId } = req.params;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId }, include: { organizers: true } });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+
+    const isOrganizer = event.creatorId === req.user.id || event.organizers.some(o => o.userId === req.user.id) || req.user.globalRing === 0;
+    if (!isOrganizer) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only organizers can distribute rewards.' } });
+
+    const rewardTiers = event.rewardTiers;
+    if (!rewardTiers || !Array.isArray(rewardTiers) || rewardTiers.length === 0) {
+      return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'No reward tiers configured for this event.' } });
+    }
+
+    // Build leaderboard to determine ranks
+    const teams = await prisma.eventTeam.findMany({
+      where: { eventId },
+      include: { submissions: { include: { task: true } }, pointAdjustments: true, members: true }
+    });
+
+    const leaderboard = teams.map(team => {
+      let totalScore = team.points;
+      team.submissions.forEach(sub => {
+        if (sub.status === 'correct') totalScore += sub.scoreAwarded;
+        else if (sub.status === 'wrong') totalScore -= (sub.task.wrongSubmissionPenalty + event.wrongSubmissionPenalty);
+      });
+      team.pointAdjustments?.forEach(adj => { totalScore += adj.pointsAdded; });
+      return { id: team.id, name: team.name, score: Math.round(totalScore), members: team.members };
+    });
+
+    leaderboard.sort((a, b) => b.score - a.score);
+
+    const distributed = [];
+
+    for (const tier of rewardTiers) {
+      const rankIndex = tier.rank - 1;
+      const team = leaderboard[rankIndex];
+      if (!team) continue;
+
+      for (const member of team.members) {
+        if (tier.credits && tier.credits > 0) {
+          await prisma.user.update({
+            where: { id: member.userId },
+            data: { creditBalance: { increment: tier.credits } }
+          });
+          await prisma.transaction.create({
+            data: { receiverId: member.userId, amount: tier.credits, type: 'event_reward', referenceId: eventId }
+          });
+        }
+        if (tier.badgeId) {
+          await prisma.userBadge.upsert({
+            where: { userId_badgeId: { userId: member.userId, badgeId: tier.badgeId } },
+            update: {},
+            create: { userId: member.userId, badgeId: tier.badgeId, source: 'event' }
+          });
+        }
+      }
+
+      distributed.push({ rank: tier.rank, teamId: team.id, teamName: team.name, credits: tier.credits || 0, badgeId: tier.badgeId || null });
+    }
+
+    return success(res, { distributed });
+  } catch (err) { next(err); }
+};

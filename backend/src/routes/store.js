@@ -5,6 +5,7 @@ const path = require('path');
 const authMiddleware = require('../middleware/auth');
 const prisma = require('../prisma');
 const { success, error } = require('../utils/apiResponse');
+const { ethers } = require('ethers');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -244,8 +245,126 @@ router.post('/display-badges', [
 });
 
 // ==========================================
-// LEDGER & CREDITS
+// LEDGER & CREDITS & MEMBERSHIPS
 // ==========================================
+
+// Purchase Membership (Using Credits)
+router.post('/buy-membership', [
+  body('tier').isIn(['pro', 'ultra']),
+  body('duration').isIn(['weekly', 'monthly', 'yearly'])
+], async (req, res, next) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return error(res, 'VALIDATION', 'Invalid data', 400);
+
+    const { tier, duration } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+    // Price Matrix (Credits)
+    const PRICING = {
+      pro: { weekly: 50, monthly: 150, yearly: 1500 },
+      ultra: { weekly: 100, monthly: 300, yearly: 3000 }
+    };
+    const cost = PRICING[tier][duration];
+
+    if (user.globalRing !== 0 && user.creditBalance < cost) {
+      return error(res, 'VALIDATION', `Insufficient balance. Requires ${cost} credits.`, 400);
+    }
+
+    const now = new Date();
+    let expiryDate = new Date(now);
+    if (duration === 'weekly') expiryDate.setDate(now.getDate() + 7);
+    if (duration === 'monthly') expiryDate.setMonth(now.getMonth() + 1);
+    if (duration === 'yearly') expiryDate.setFullYear(now.getFullYear() + 1);
+
+    await prisma.$transaction(async (ptx) => {
+      if (user.globalRing !== 0) {
+        await ptx.user.update({
+          where: { id: req.user.id },
+          data: {
+            subscriptionPlan: tier,
+            subscriptionExpiry: expiryDate,
+            creditBalance: { decrement: cost }
+          }
+        });
+      } else {
+        await ptx.user.update({
+          where: { id: req.user.id },
+          data: {
+            subscriptionPlan: tier,
+            subscriptionExpiry: expiryDate
+          }
+        });
+      }
+
+      await ptx.transaction.create({
+        data: {
+          senderId: req.user.id,
+          receiverId: req.user.id,
+          amount: cost,
+          type: 'purchase',
+          referenceId: `membership_${tier}_${duration}`,
+          tier,
+          duration
+        }
+      });
+    });
+
+    return success(res, { message: 'Membership active!', tier, expiryDate });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Buy Credits (Crypto)
+router.post('/buy-credits', [
+  body('txHash').notEmpty(),
+  body('amount').isInt({ min: 1 })
+], async (req, res, next) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return error(res, 'VALIDATION', 'Invalid data', 400);
+
+    const { txHash, amount } = req.body;
+    const treasury = process.env.TREASURY_ADDRESS;
+    if (!treasury) return error(res, 'SERVER_ERROR', 'Treasury address not configured', 500);
+
+    // Verify it hasn't been used
+    const existingTx = await prisma.transaction.findFirst({ where: { referenceId: txHash, type: 'crypto_purchase' } });
+    if (existingTx) return error(res, 'DUPLICATE', 'Transaction hash already claimed', 400);
+
+    // Validate using ethers on Sepolia
+    const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
+    const tx = await provider.getTransaction(txHash);
+
+    if (!tx) return error(res, 'NOT_FOUND', 'Transaction not found on network', 404);
+    if (tx.to?.toLowerCase() !== treasury.toLowerCase()) {
+      return error(res, 'VALIDATION', 'Transaction was not sent to the Treasury Address', 400);
+    }
+
+    await prisma.$transaction(async (ptx) => {
+      await ptx.user.update({
+        where: { id: req.user.id },
+        data: { creditBalance: { increment: amount } }
+      });
+
+      await ptx.transaction.create({
+        data: {
+          senderId: req.user.id,
+          receiverId: req.user.id,
+          amount: amount,
+          cryptoAmount: ethers.formatEther(tx.value),
+          type: 'crypto_purchase',
+          referenceId: txHash
+        }
+      });
+    });
+
+    return success(res, { message: `${amount} Credits purchased successfully!` });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Transfer credits
 router.post('/transfer', [

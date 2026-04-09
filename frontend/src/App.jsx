@@ -35,6 +35,7 @@ import EventDetailsPage from './pages/EventDetailsPage';
 import JoinGroupPage from './pages/JoinGroupPage';
 import ResourcesPage from './pages/ResourcesPage';
 import StorePage from './pages/StorePage';
+import FloatingChatbot from './components/FloatingChatbot';
 
 export default function App() {
   return (
@@ -146,6 +147,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/profile" replace />} />
           <Route path="*" element={<Navigate to="/profile" replace />} />
         </Routes>
+        <FloatingChatbot />
       </AuthProvider>
     </BrowserRouter>
   );

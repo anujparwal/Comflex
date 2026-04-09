@@ -26,6 +26,7 @@ const dmRoutes = require('./routes/dm');
 const eventRoutes = require('./routes/events');
 const resourceRoutes = require('./routes/resources');
 const storeRoutes = require('./routes/store');
+const chatbotRoutes = require('./routes/chatbotRoutes');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -64,6 +65,7 @@ app.use('/api/v1/dm', dmRoutes);
 app.use('/api/v1/events', eventRoutes);
 app.use('/api/v1/resources', resourceRoutes);
 app.use('/api/v1/store', storeRoutes);
+app.use('/api/v1/chatbot', chatbotRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -17,5 +17,9 @@ export const storeApi = {
   // Admin Store
   adminCreateBadge: (data) => api.post('/store/admin/badges', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
   adminCreateListing: (data) => api.post('/store/admin/listings', data),
-  mintCredits: (userId, amount) => api.post('/store/admin/mint-credits', { userId, amount })
+  mintCredits: (userId, amount) => api.post('/store/admin/mint-credits', { userId, amount }),
+
+  // Memberships & Crypto
+  buyMembership: (data) => api.post('/store/buy-membership', data),
+  buyCredits: (data) => api.post('/store/buy-credits', data)
 };

@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dmApi } from '../api/dmApi';
+import { storeApi } from '../api/storeApi';
 import { AuthContext } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 import Layout from '../components/Layout';
@@ -24,6 +25,9 @@ export default function MessagesPage() {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [showCreditTransfer, setShowCreditTransfer] = useState(false);
+  const [creditAmount, setCreditAmount] = useState('');
+  const [creditMsg, setCreditMsg] = useState('');
   const messagesEndRef = useRef(null);
 
   // Fetch conversation list
@@ -152,6 +156,26 @@ export default function MessagesPage() {
   };
 
   const activePartner = conversations.find(c => c.partner?.id === activeUserId)?.partner;
+
+  const handleCreditTransfer = async () => {
+    const amount = parseInt(creditAmount, 10);
+    if (!amount || amount <= 0) return setCreditMsg('Enter a valid amount.');
+    setCreditMsg('');
+    setSending(true);
+    try {
+      await storeApi.transferCredits(activeUserId, amount);
+      // Send a chat message confirming the transfer
+      await dmApi.sendMessage(activeUserId, { content: `💸 Sent ${amount} credits` });
+      setCreditAmount('');
+      setShowCreditTransfer(false);
+      setCreditMsg('');
+      await fetchMessages();
+    } catch (err) {
+      setCreditMsg(err.response?.data?.error?.message || 'Transfer failed.');
+    } finally {
+      setSending(false);
+    }
+  };
 
   // Read receipt tick component
   const ReadTick = ({ message }) => {
@@ -344,6 +368,47 @@ export default function MessagesPage() {
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Credit Transfer Overlay */}
+              {showCreditTransfer && (
+                <div className="px-4 pt-3 pb-2 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">🪙</span>
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)] mb-1.5">Send Credits to {activePartner?.displayName || 'this user'}</p>
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Amount..."
+                          value={creditAmount}
+                          onChange={e => setCreditAmount(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleCreditTransfer()}
+                          className="w-32 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--color-accent)]"
+                          autoFocus
+                          disabled={sending}
+                        />
+                        <button
+                          onClick={handleCreditTransfer}
+                          disabled={sending || !creditAmount}
+                          className="btn text-sm py-1.5 px-4 bg-[var(--color-success)] text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                          {sending ? '...' : 'Send'}
+                        </button>
+                        <button
+                          onClick={() => { setShowCreditTransfer(false); setCreditAmount(''); setCreditMsg(''); }}
+                          className="text-xs text-[var(--color-danger)] hover:underline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {creditMsg && (
+                        <p className="text-xs mt-1.5 text-[var(--color-danger)]">{creditMsg}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Input Overlay (Reply Context) */}
               {replyingTo && (
                 <div className="px-3 pt-2 pb-1 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] flex items-center justify-between">
@@ -391,6 +456,14 @@ export default function MessagesPage() {
                     />
                     <svg className="w-5 h-5 text-[var(--color-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreditTransfer(!showCreditTransfer)}
+                    className={`p-2 rounded-full transition-colors ${showCreditTransfer ? 'bg-[var(--color-success)]/20 text-[var(--color-success)]' : 'hover:bg-[var(--color-bg-primary)] text-[var(--color-text-muted)]'}`}
+                    title="Send Credits"
+                  >
+                    🪙
+                  </button>
                   <input
                     ref={inputRef}
                     type="text"

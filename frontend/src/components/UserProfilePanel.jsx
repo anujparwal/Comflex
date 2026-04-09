@@ -133,7 +133,7 @@ export default function UserProfilePanel({ userId, onClose, currentUserId }) {
             )}
             <div className="bg-[var(--color-bg-card)] rounded-xl p-3 text-center">
               <p className="text-xs text-[var(--color-text-muted)] mb-1">Credits</p>
-              <p className="text-sm font-semibold">{profile.creditBalance ?? 0}</p>
+              <p className="text-sm font-semibold">{profile.globalRing === 0 ? '∞' : (profile.creditBalance ?? 0)}</p>
             </div>
             <div className="bg-[var(--color-bg-card)] rounded-xl p-3 text-center">
               <p className="text-xs text-[var(--color-text-muted)] mb-1">Joined</p>
