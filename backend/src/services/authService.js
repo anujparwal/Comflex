@@ -37,11 +37,21 @@ async function register(email, password, displayName) {
     throw Object.assign(new Error('An account with this email already exists.'), { statusCode: 409, code: 'DUPLICATE_EMAIL' });
   }
 
+  // Auto-generate a unique temporary username
+  const baseUsername = email.split('@')[0];
+  let tempUsername = baseUsername;
+  let counter = 1;
+  while (await prisma.user.findUnique({ where: { username: tempUsername } })) {
+    tempUsername = `${baseUsername}${counter}`;
+    counter++;
+  }
+
   // Create the user with hashed password
   const hashedPw = await hashPassword(password);
   const user = await prisma.user.create({
     data: {
       email,
+      username: tempUsername,
       password: hashedPw,
       displayName,
       globalRing: 3, // Default: Member
@@ -109,9 +119,18 @@ async function googleLogin(idToken) {
     } else {
       // Create brand new user — no password yet
       isNewUser = true;
+      const baseUsername = googleUser.email.split('@')[0];
+      let tempUsername = baseUsername;
+      let counter = 1;
+      while (await prisma.user.findUnique({ where: { username: tempUsername } })) {
+        tempUsername = `${baseUsername}${counter}`;
+        counter++;
+      }
+
       user = await prisma.user.create({
         data: {
           email: googleUser.email,
+          username: tempUsername,
           password: '', // No password — Google-only for now
           displayName: googleUser.name,
           avatarUrl: googleUser.picture,
@@ -143,7 +162,7 @@ async function googleLogin(idToken) {
     refreshToken,
     user: sanitizeUser(user),
     needsPassword: !user.hasPassword,
-    needsUsername: !user.username,
+    needsUsername: !user.username || user.username.includes('@') || /^\d+$/.test(user.username.replace(/[a-zA-Z]/g, '')), // Assuming a generated name is likely to look like this
     isNewUser,
   };
 }

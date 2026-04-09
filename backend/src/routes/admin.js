@@ -549,6 +549,15 @@ router.post(
         return error(res, 'DUPLICATE_EMAIL', 'A user with this email already exists.', 409);
       }
 
+      // Auto-generate a dummy username to avoid MongoDB multiple-null unique constraint error
+      const baseUsername = email.split('@')[0];
+      let generatedUsername = baseUsername;
+      let counter = 1;
+      while (await prisma.user.findUnique({ where: { username: generatedUsername } })) {
+        generatedUsername = `${baseUsername}${counter}`;
+        counter++;
+      }
+
       // Hash the password
       const { hashPassword } = require('../utils/password');
       const hashedPw = await hashPassword(password);
@@ -557,6 +566,7 @@ router.post(
       const user = await prisma.user.create({
         data: {
           email,
+          username: generatedUsername,
           password: hashedPw,
           displayName,
           globalRing: 3,
