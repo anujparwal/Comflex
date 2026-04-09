@@ -623,6 +623,20 @@ exports.createTask = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.deleteTask = async (req, res, next) => {
+  try {
+    const { id: eventId, taskId } = req.params;
+    const event = await prisma.event.findUnique({ where: { id: eventId }, include: { organizers: true } });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+
+    const isOrganizer = event.creatorId === req.user.id || event.organizers.some(o => o.userId === req.user.id) || req.user.globalRing === 0;
+    if (!isOrganizer) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only organizers can delete tasks.' } });
+
+    await prisma.eventTask.delete({ where: { id: taskId } });
+    return success(res, { message: 'Task deleted successfully.' });
+  } catch (err) { next(err); }
+};
+
 exports.listTasks = async (req, res, next) => {
   try {
     const { id: eventId } = req.params;
@@ -757,12 +771,15 @@ exports.getLeaderboard = async (req, res, next) => {
     const teams = await prisma.eventTeam.findMany({
       where: { eventId },
       include: {
-        submissions: { include: { task: true } }
+        submissions: { include: { task: true } },
+        pointAdjustments: { include: { awardedBy: { select: { displayName: true } } } }
       }
     });
 
     const leaderboard = teams.map(team => {
-       let totalScore = team.points; // Base points if manual awarding was used
+       let totalScore = team.points; // Any legacy base points
+       let history = [];
+
        team.submissions.forEach(sub => {
          if (sub.status === 'correct') {
             let taskScore = sub.scoreAwarded;
@@ -774,19 +791,52 @@ exports.getLeaderboard = async (req, res, next) => {
                }
             }
             totalScore += taskScore;
+            history.push({ type: 'submission', taskId: sub.taskId, taskTitle: sub.task.title, scoreChange: Math.round(taskScore), date: sub.submittedAt, status: 'correct' });
          } else if (sub.status === 'wrong') {
              // deduct penalty
-             totalScore -= sub.task.wrongSubmissionPenalty;
-             // Global penalty if exists
-             totalScore -= event.wrongSubmissionPenalty;
+             const penalty = sub.task.wrongSubmissionPenalty + event.wrongSubmissionPenalty;
+             totalScore -= penalty;
+             history.push({ type: 'submission', taskId: sub.taskId, taskTitle: sub.task.title, scoreChange: -penalty, date: sub.submittedAt, status: 'wrong' });
          }
        });
 
-       return { id: team.id, name: team.name, score: Math.round(totalScore) };
+       team.pointAdjustments?.forEach(adj => {
+          totalScore += adj.pointsAdded;
+          history.push({ type: 'adjustment', reason: adj.reason, awardedBy: adj.awardedBy?.displayName, scoreChange: adj.pointsAdded, date: adj.createdAt });
+       });
+
+       history.sort((a,b) => new Date(b.date) - new Date(a.date));
+
+       return { id: team.id, name: team.name, score: Math.round(totalScore), history };
     });
 
     leaderboard.sort((a, b) => b.score - a.score);
 
     return success(res, leaderboard);
+  } catch(err) { next(err); }
+};
+
+exports.adjustTeamPoints = async (req, res, next) => {
+  try {
+    const { id: eventId, teamId } = req.params;
+    const { pointsAdded, reason } = req.body;
+
+    const event = await prisma.event.findUnique({ where: { id: eventId }, include: { organizers: true } });
+    if (!event) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Event not found.' } });
+
+    const isOrganizer = event.creatorId === req.user.id || event.organizers.some(o => o.userId === req.user.id) || req.user.globalRing === 0;
+    if (!isOrganizer) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only organizers can adjust points.' } });
+
+    const adj = await prisma.teamPointAdjustment.create({
+      data: {
+        teamId,
+        eventId,
+        pointsAdded: parseInt(pointsAdded, 10),
+        reason,
+        awardedById: req.user.id
+      }
+    });
+
+    return success(res, adj, 201);
   } catch(err) { next(err); }
 };

@@ -240,6 +240,15 @@ router.get('/:id/tasks',
   eventController.listTasks
 );
 
+router.delete('/:id/tasks/:taskId',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('taskId').isMongoId().withMessage('Invalid Task ID.')
+  ],
+  validate,
+  eventController.deleteTask
+);
+
 // ==========================================
 // SUBMISSIONS
 // ==========================================
@@ -284,6 +293,18 @@ router.get('/:id/leaderboard',
   [param('id').isMongoId().withMessage('Invalid Event ID.')],
   validate,
   eventController.getLeaderboard
+);
+
+// Manual point adjustments by organizers
+router.post('/:id/teams/:teamId/points',
+  [
+    param('id').isMongoId().withMessage('Invalid Event ID.'),
+    param('teamId').isMongoId().withMessage('Invalid Team ID.'),
+    body('pointsAdded').isInt().withMessage('pointsAdded must be an integer.'),
+    body('reason').optional().isString()
+  ],
+  validate,
+  eventController.adjustTeamPoints
 );
 
 module.exports = router;

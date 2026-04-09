@@ -64,6 +64,7 @@ model User {
   eventMemberships  EventTeamMember[]
   eventTeamInvites  EventTeamInvite[]
   evaluatedSubmissions EventSubmission[]
+  pointAdjustments   TeamPointAdjustment[]
 
   // Resource Relations
   resourcesUploaded Resource[]
@@ -296,6 +297,7 @@ model Event {
   teamInvites     EventTeamInvite[]
   tasks           EventTask[]
   submissions     EventSubmission[]
+  pointAdjustments TeamPointAdjustment[]
 }
 
 model EventOrganizer {
@@ -325,6 +327,7 @@ model EventTeam {
   members     EventTeamMember[]
   invites     EventTeamInvite[]
   submissions EventSubmission[]
+  pointAdjustments TeamPointAdjustment[]
 
   @@unique([eventId, name])
 }
@@ -395,6 +398,23 @@ model EventSubmission {
   team            EventTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
   task            EventTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   evaluator       User?     @relation(fields: [evaluatedById], references: [id])
+}
+
+// ============================================================
+// POINT ADJUSTMENTS
+// ============================================================
+model TeamPointAdjustment {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  teamId      String   @db.ObjectId
+  eventId     String   @db.ObjectId
+  pointsAdded Int
+  reason      String?
+  awardedById String   @db.ObjectId
+  createdAt   DateTime @default(now())
+
+  team        EventTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  awardedBy   User      @relation(fields: [awardedById], references: [id])
 }
 
 // ============================================================

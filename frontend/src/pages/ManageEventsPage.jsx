@@ -19,8 +19,6 @@ export default function ManageEventsPage() {
     durationHours: 0,
     durationMinutes: 0,
     taskViewMode: 'all',
-    scoreMode: 'constant',
-    wrongSubmissionPenalty: 0,
     category: '',
     targetTags: '',
     isTeamEvent: false,
@@ -64,7 +62,7 @@ export default function ManageEventsPage() {
       
       // Reset form
       setForm({
-        title: '', description: '', startDate: '', durationHours: 0, durationMinutes: 0, taskViewMode: 'all', scoreMode: 'constant', wrongSubmissionPenalty: 0, category: '', targetTags: '', 
+        title: '', description: '', startDate: '', durationHours: 0, durationMinutes: 0, taskViewMode: 'all', category: '', targetTags: '', 
         isTeamEvent: false, minTeamSize: 1, maxTeamSize: 4, autoStart: true
       });
       
@@ -137,7 +135,7 @@ export default function ManageEventsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Duration</label>
                 <div className="flex gap-1">
@@ -152,17 +150,6 @@ export default function ManageEventsPage() {
                   <option value="all">All At Once</option>
                   <option value="dynamic">Dynamic Unlocking</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm text-[var(--color-text-secondary)] mb-1">Score Mode</label>
-                <select value={form.scoreMode} onChange={e => setForm({...form, scoreMode: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-lg px-2 py-2">
-                  <option value="constant">Constant</option>
-                  <option value="dynamic">Dynamic Decay</option>
-                </select>
-              </div>
-              <div>
-                 <label className="block text-sm text-[var(--color-text-secondary)] mb-1" title="Penalty points deducted for wrong submission globally">Wrong Penalty</label>
-                 <input type="number" min="0" value={form.wrongSubmissionPenalty} onChange={e => setForm({...form, wrongSubmissionPenalty: Number(e.target.value)})} className="w-full text-sm" placeholder="e.g. 50 (Codeforces standard pts)" />
               </div>
             </div>
 
