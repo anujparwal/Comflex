@@ -24,6 +24,7 @@ router.get('/status', async (req, res, next) => {
       isConfigured: config?.isConfigured ?? false,
       institutionName: config?.isConfigured ? config.name : null,
       registrationEnabled: config?.isConfigured ?? false,
+      branchMapping: config?.emailParsingRules?.branchMapping || {},
     });
   } catch (err) {
     next(err);

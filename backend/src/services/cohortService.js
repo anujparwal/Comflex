@@ -87,8 +87,8 @@ async function assignCohortTags(userId, email) {
     const type = isPrimary ? 'primary' : 'cross-year';
 
     // Upsert the group (also fixes display names on existing groups)
-    const correctDisplayName = isPrimary 
-      ? `Class of ${year}` 
+    const correctDisplayName = isPrimary
+      ? `Class of ${year}`
       : `${tagName.split('-')[1]}-${tagName.split('-')[2]} Cross-Year`;
 
     let group = await prisma.cohortGroup.findUnique({ where: { name: tagName } });
@@ -123,35 +123,35 @@ async function assignCohortTags(userId, email) {
     // Default permissions for Ring 2 (elevated/seniors)
     const defaultPermissions = groupRing === 2
       ? {
-          can_send_messages: true,
-          can_delete_own_messages: true,
-          can_delete_others_messages: true,
-          can_mute_members: true,
-          can_kick_members: true,
-          can_add_members: true,
-          can_tag_members: true,
-          can_manage_economy: false,
-          can_create_events: false,
-          can_pin_messages: true,
-          can_manage_roles: false,
-          can_edit_group_info: false,
-          can_stop_others_tagging: true,
-        }
+        can_send_messages: true,
+        can_delete_own_messages: true,
+        can_delete_others_messages: true,
+        can_mute_members: true,
+        can_kick_members: true,
+        can_add_members: true,
+        can_tag_members: true,
+        can_manage_economy: false,
+        can_create_events: false,
+        can_pin_messages: true,
+        can_manage_roles: false,
+        can_edit_group_info: false,
+        can_stop_others_tagging: true,
+      }
       : {
-          can_send_messages: true,
-          can_delete_own_messages: true,
-          can_delete_others_messages: false,
-          can_mute_members: false,
-          can_kick_members: false,
-          can_add_members: false,
-          can_tag_members: true,
-          can_manage_economy: false,
-          can_create_events: false,
-          can_pin_messages: false,
-          can_manage_roles: false,
-          can_edit_group_info: false,
-          can_stop_others_tagging: false,
-        };
+        can_send_messages: true,
+        can_delete_own_messages: true,
+        can_delete_others_messages: false,
+        can_mute_members: false,
+        can_kick_members: false,
+        can_add_members: false,
+        can_tag_members: true,
+        can_manage_economy: false,
+        can_create_events: false,
+        can_pin_messages: false,
+        can_manage_roles: false,
+        can_edit_group_info: false,
+        can_stop_others_tagging: false,
+      };
 
     // Create group membership (skip if already exists)
     const existingMembership = await prisma.groupMember.findUnique({

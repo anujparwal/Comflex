@@ -11,6 +11,7 @@ import { adminApi } from '../api/adminApi';
 import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/Layout';
 import CreateGroupModal from '../components/CreateGroupModal';
+import CreateCohortGroupModal from '../components/CreateCohortGroupModal';
 
 const TYPE_LABELS = { primary: '🎓 Cohort', 'cross-year': '🔗 Cross-Year', custom: '✨ Custom' };
 
@@ -20,6 +21,7 @@ export default function GroupsPage() {
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showCreateCohort, setShowCreateCohort] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.globalRing === 0;
@@ -70,6 +72,11 @@ export default function GroupsPage() {
               <span className="text-xs px-2.5 py-1 rounded-full chip-accent">
                 Admin View — All Groups
               </span>
+            )}
+            {user?.canCreateGroups && (
+               <button onClick={() => setShowCreateCohort(true)} className="btn btn-secondary text-sm px-4 py-2 border border-[var(--color-accent)]">
+                 + Create Cohort Group
+               </button>
             )}
             <button onClick={() => setShowCreate(true)} className="btn btn-primary text-sm px-4 py-2">
               + Create Group
@@ -204,6 +211,16 @@ export default function GroupsPage() {
       {showCreate && (
         <CreateGroupModal
           onClose={() => setShowCreate(false)}
+          onCreated={(group) => {
+            fetchData();
+            if (group?.id) navigate(`/groups/${group.id}`);
+          }}
+        />
+      )}
+
+      {showCreateCohort && (
+        <CreateCohortGroupModal
+          onClose={() => setShowCreateCohort(false)}
           onCreated={(group) => {
             fetchData();
             if (group?.id) navigate(`/groups/${group.id}`);

@@ -15,6 +15,8 @@ const { requireRing, canActOnUser } = require('../middleware/ringCheck');
 const { requireGroupMember, requireGroupPermission } = require('../middleware/groupPermission');
 const groupService = require('../services/groupService');
 const messageService = require('../services/messageService');
+const dmService = require('../services/dmService');
+const env = require('../config/env');
 const { extractCohortYear, extractBranch } = require('../services/cohortService');
 const { emitToGroup } = require('../services/chatSocketService');
 const { success, error } = require('../utils/apiResponse');
@@ -127,7 +129,9 @@ router.post(
     body('description').optional().trim(),
     body('type').optional().isIn(['primary', 'cross-year', 'custom']),
     body('memberIds').optional().isArray(),
-    body('autoAdd').optional().isIn(['batch', 'branch-batch']),
+    body('autoAdd').optional().isIn(['batch', 'branch-batch', 'cohort']),
+    body('targetYears').optional().isArray(),
+    body('targetBranches').optional().isArray()
   ],
   async (req, res, next) => {
     try {
@@ -143,74 +147,99 @@ router.post(
         creatorId: req.user.id,
       });
 
-      // Add initial members (friends only — non-friends get invites)
+      // Add initial members
       let memberIds = req.body.memberIds || [];
       const results = [];
       const isAutoAdd = req.body.autoAdd;
-      
+      const creatorYear = extractCohortYear(req.user.cohortTags) || 0; // fallback to 0 if none
+      const myBranch = extractBranch(req.user.cohortTags);
+
       // If autoAdd is checked, we enforce privileges and find auto-members
       if (isAutoAdd) {
-        if (!req.user.canCreateGroups && req.user.globalRing !== 0) {
+        const prisma = require('../prisma');
+        const callingUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+        
+        if (!callingUser.canCreateGroups && req.user.globalRing !== 0) {
            return error(res, 'PERMISSION_DENIED', 'Only users with group creation rights can auto-add members.', 403);
         }
-        
-        const myYear = extractCohortYear(req.user.cohortTags);
-        if (!myYear) {
-          return error(res, 'NO_COHORT', 'You do not have a standard cohort year to auto-create from.', 400);
-        }
 
-        const myBranch = extractBranch(req.user.cohortTags);
-        if (req.body.autoAdd === 'branch-batch' && !myBranch) {
-           return error(res, 'NO_BRANCH', 'You do not have a branch tag to auto-create a branch group.', 400);
-        }
-
-        const prisma = require('../prisma');
-        const queryFilter = {
-             id: { not: req.user.id },
-             cohortTags: { has: `cohort-${myYear}` } // Wait, cohort tag might be "cohort-28" but the year extracted might be 2028. Let's match any tag that gives >= myYear.
-        };
-        
-        // Let's refine the query: fetch ALL users, then filter
-        // Or if we know the exact string, we can do it.
         const allUsers = await prisma.user.findMany({
             where: { id: { not: req.user.id } },
             select: { id: true, cohortTags: true }
         });
 
-        const targetIds = [];
-        for (const u of allUsers) {
-           const uYear = extractCohortYear(u.cohortTags);
-           if (uYear && uYear >= myYear) { // Batchmates and Juniors only
-               if (isAutoAdd === 'batch' && uYear === myYear) {
-                   targetIds.push(u.id);
-               } else if (isAutoAdd === 'branch-batch' && uYear === myYear) {
-                   const uBranch = extractBranch(u.cohortTags);
-                   if (uBranch === myBranch) {
-                       targetIds.push(u.id);
-                   }
-               }
-           }
+        // Resolve targets based on autoAdd strategy
+        if (isAutoAdd === 'batch' || isAutoAdd === 'branch-batch') {
+          if (!creatorYear) return error(res, 'NO_COHORT', 'You do not have a standard cohort year to auto-create from.', 400);
+          if (isAutoAdd === 'branch-batch' && !myBranch) return error(res, 'NO_BRANCH', 'You do not have a branch tag to auto-create a branch group.', 400);
+
+          for (const u of allUsers) {
+             const uYear = extractCohortYear(u.cohortTags);
+             if (uYear && uYear >= creatorYear) {
+                 if (isAutoAdd === 'batch' && uYear === creatorYear) memberIds.push(u.id);
+                 else if (isAutoAdd === 'branch-batch' && uYear === creatorYear && extractBranch(u.cohortTags) === myBranch) memberIds.push(u.id);
+             }
+          }
+        } else if (isAutoAdd === 'cohort') {
+          const { targetYears, targetBranches } = req.body;
+          for (const u of allUsers) {
+             const uYear = extractCohortYear(u.cohortTags);
+             const uBranch = extractBranch(u.cohortTags);
+             
+             let match = true;
+             
+             if (targetYears && targetYears.length > 0) {
+               if (!targetYears.map(y => parseInt(y, 10)).includes(uYear)) match = false;
+             }
+             if (targetBranches && targetBranches.length > 0) {
+               if (!targetBranches.includes(uBranch)) match = false;
+             }
+             
+             if (match && uYear) {
+               memberIds.push(u.id);
+             }
+          }
         }
-        memberIds = [...new Set([...memberIds, ...targetIds])];
+        
+        memberIds = [...new Set(memberIds)];
       }
 
-      const creatorYear = extractCohortYear(req.user.cohortTags);
-
+      // Process each member
       for (const memberId of memberIds) {
         try {
-          // If autoAdding, we check if target is senior. Auto-added ones are already filtered, but memberIds from input need checking too.
+          // Fetch target strictly for logic checks
+          const prisma = require('../prisma');
+          const targetUser = await prisma.user.findUnique({where: {id: memberId}, select: {id: true, cohortTags: true}});
           let bypassFriendCheck = false;
-          if (isAutoAdd) {
-             const prisma = require('../prisma');
-             const targetUser = await prisma.user.findUnique({where: {id: memberId}, select: {id: true, cohortTags: true}});
-             if (targetUser) {
-                 const targetYear = extractCohortYear(targetUser.cohortTags);
-                 if (targetYear && creatorYear && targetYear < creatorYear) {
-                     // Skip adding senior in auto-add mode entirely!
-                     results.push({ userId: memberId, error: 'Cannot auto-add seniors.' });
-                     continue;
+          
+          if (targetUser) {
+             const targetYear = extractCohortYear(targetUser.cohortTags);
+             
+             // If autoAdd mode is cohort or batch
+             if (isAutoAdd) {
+               if (targetYear && creatorYear && targetYear < creatorYear) {
+                 // Target is SENIOR (Graduation year < my graduation year)
+                 const isFriend = await groupService.areFriends(req.user.id, memberId);
+                 if (isFriend) {
+                   bypassFriendCheck = true; // Add directly
+                 } else {
+                   // Senior & NOT friend -> Send DM link instead of directly adding
+                   try {
+                     const linkObj = await groupService.getInviteLink(group.id);
+                     await groupService.createInvite(group.id, memberId, req.user.id);
+                     await dmService.sendDM(req.user.id, memberId, { 
+                       content: `Hi there! I've created a group "${group.displayName || group.name}". As you are a senior, I'm inviting you via link. Join using this link: ${env.FRONTEND_URL}/join/${linkObj.token}` 
+                     });
+                     results.push({ userId: memberId, status: 'dm_invite_sent' });
+                   } catch (dmErr) {
+                     results.push({ userId: memberId, error: 'Failed to send DM invite.' });
+                   }
+                   continue; // skip the direct groupService.addMember
                  }
-                 bypassFriendCheck = true; // For approved batchmates/juniors in autoAdd mode
+               } else {
+                 // Target is JUNIOR or BATCHMATE (targetYear >= creatorYear)
+                 bypassFriendCheck = true;
+               }
              }
           }
 
@@ -326,6 +355,21 @@ router.post(
       }
 
       const result = await groupService.addMember(req.params.id, req.body.userId, req.user.id);
+      
+      // If the user was invited (i.e. not added directly because they aren't friends), send a DM
+      if (result.invited) {
+        try {
+          const group = await groupService.getGroup(req.params.id);
+          const linkObj = await groupService.getInviteLink(req.params.id);
+          await dmService.sendDM(req.user.id, req.body.userId, { 
+            content: `Hi there! I'm inviting you to join the group "${group.displayName || group.name}". Join using this link: ${env.FRONTEND_URL}/join/${linkObj.token}` 
+          });
+          result.dmSent = true;
+        } catch (linkErr) {
+          result.dmFailed = true;
+        }
+      }
+
       const status = result.invited ? 201 : 201;
       return success(res, result, status);
     } catch (err) {
