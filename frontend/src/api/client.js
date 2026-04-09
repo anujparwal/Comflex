@@ -7,7 +7,9 @@
 
 import axios from 'axios';
 
-const API_BASE = '/api/v1';
+// Use the Vercel-injected VITE_BACKEND_URL in production, fallback to relative path (Vite proxy) locally
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+const API_BASE = `${BACKEND_URL}/api/v1`;
 
 const client = axios.create({
   baseURL: API_BASE,
