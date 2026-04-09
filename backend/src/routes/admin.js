@@ -91,6 +91,7 @@ router.patch('/institution', async (req, res, next) => {
     if (req.body.name !== undefined) allowed.name = req.body.name;
     if (req.body.domain !== undefined) allowed.domain = req.body.domain;
     if (req.body.logoUrl !== undefined) allowed.logoUrl = req.body.logoUrl;
+    if (req.body.notesDownloadReward !== undefined) allowed.notesDownloadReward = parseInt(req.body.notesDownloadReward, 10);
 
     const updated = await prisma.institutionConfig.update({
       where: { id: config.id },
@@ -667,6 +668,9 @@ router.patch(
       if (req.body.canManageResources !== undefined) {
         updateData.canManageResources = Boolean(req.body.canManageResources);
       }
+      if (req.body.canManageStore !== undefined) {
+        updateData.canManageStore = Boolean(req.body.canManageStore);
+      }
 
       const updated = await prisma.user.update({
         where: { id: userId },
@@ -678,6 +682,7 @@ router.patch(
         canCreateGroups: updated.canCreateGroups,
         canCreateEvents: updated.canCreateEvents,
         canManageResources: updated.canManageResources,
+        canManageStore: updated.canManageStore,
       });
     } catch (err) {
       next(err);

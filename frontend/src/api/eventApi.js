@@ -22,4 +22,6 @@ export const eventApi = {
   listSubmissions: (eventId, taskId) => client.get(`/events/${eventId}/tasks/${taskId}/submissions`),
   evaluateSubmission: (eventId, submissionId, data) => client.post(`/events/${eventId}/submissions/${submissionId}/evaluate`, data),
   adjustTeamPoints: (eventId, teamId, data) => client.post(`/events/${eventId}/teams/${teamId}/points`, data),
+  awardTeamRewards: (eventId, teamId, data) => client.post(`/events/${eventId}/teams/${teamId}/rewards`, data),
+  distributeRewards: (eventId) => client.post(`/events/${eventId}/distribute-rewards`)
 };

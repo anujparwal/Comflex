@@ -236,4 +236,59 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// Download a resource and reward uploader with credits
+router.get('/download/:id', async (req, res, next) => {
+  try {
+    const resource = await prisma.resource.findUnique({ where: { id: req.params.id } });
+    if (!resource) return res.status(404).json({ error: 'File not found' });
+
+    // Check configuration for download reward
+    const config = await prisma.institutionConfig.findFirst();
+    const rewardAmount = config?.notesDownloadReward || 0;
+
+    // Issue reward to the uploader if it's someone downloading another's notes
+    if (rewardAmount > 0 && resource.uploaderId !== req.user.id) {
+      await prisma.$transaction(async (tx) => {
+        // Prevent duplicate rewards per user per file (check if transaction already exists)
+        const existingTx = await tx.transaction.findFirst({
+          where: {
+            receiverId: resource.uploaderId,
+            type: 'download_reward',
+            referenceId: `${resource.id}_${req.user.id}` // Note: track downloader in referenceId
+          }
+        });
+        
+        if (!existingTx) {
+          // Increment uploader's credits
+          await tx.user.update({
+            where: { id: resource.uploaderId },
+            data: { creditBalance: { increment: rewardAmount } }
+          });
+          
+          // Log transaction
+          await tx.transaction.create({
+            data: {
+              senderId: null, // system 
+              receiverId: resource.uploaderId,
+              amount: rewardAmount,
+              type: 'download_reward',
+              referenceId: `${resource.id}_${req.user.id}`
+            }
+          });
+        }
+      });
+    }
+
+    // Attempt to download physical file
+    const filePath = path.join(__dirname, '../../', resource.fileUrl);
+    if (fs.existsSync(filePath)) {
+      res.download(filePath, resource.fileName);
+    } else {
+      res.status(404).json({ error: 'File physical missing' });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

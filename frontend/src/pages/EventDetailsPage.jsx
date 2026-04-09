@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/Layout';
 import { eventApi } from '../api/eventApi';
 import { userApi } from '../api/userApi';
+import { storeApi } from '../api/storeApi';
 
 const CountdownClock = ({ targetDate, label }) => {
   const [timeLeft, setTimeLeft] = useState(0);
@@ -68,6 +69,8 @@ export default function EventDetailsPage() {
   const [leaderboardHistoryOpen, setLeaderboardHistoryOpen] = useState(null);
   const [gradingSubId, setGradingSubId] = useState(null);
   const [gradeScore, setGradeScore] = useState(0);
+  const [eventBadges, setEventBadges] = useState([]);
+  const [rewardData, setRewardData] = useState({ teamId: '', credits: 0, badgeId: '' });
 
   const fetchEventData = useCallback(async () => {
     setLoading(true);
@@ -82,7 +85,8 @@ export default function EventDetailsPage() {
         taskViewMode: ev.taskViewMode, scoreMode: ev.scoreMode, wrongSubmissionPenalty: ev.wrongSubmissionPenalty,
         targetTags: ev.targetTags?.join(', ') || '',
         isTeamEvent: ev.isTeamEvent || false,
-        minTeamSize: ev.minTeamSize || 1, maxTeamSize: ev.maxTeamSize || 1
+        minTeamSize: ev.minTeamSize || 1, maxTeamSize: ev.maxTeamSize || 1,
+        rewardTiers: ev.rewardTiers || []
       });
       
       const { data: teamsRes } = await eventApi.listTeams(id);
@@ -103,6 +107,11 @@ export default function EventDetailsPage() {
          const { data: lbRes } = await eventApi.getLeaderboard(id);
          setLeaderboard(lbRes.data);
       } catch(err) { console.error('Failed to fetch leaderboard', err); }
+
+      try {
+         const { data: bData } = await storeApi.getAllBadges();
+         setEventBadges(bData.data.filter(b => b.isEventBadge));
+      } catch(err) { console.error('Failed to fetch badges', err); }
     } catch {
       console.error('Failed to fetch event data');
     } finally {
@@ -317,6 +326,41 @@ export default function EventDetailsPage() {
     } finally { setActionLoading(false); }
   };
 
+  const handleAwardTeam = async (e) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      const credits = parseInt(rewardData.credits, 10) || 0;
+      if (!credits && !rewardData.badgeId) {
+        throw new Error('Must award either credits or a badge.');
+      }
+      await eventApi.awardTeamRewards(id, rewardData.teamId, { 
+        credits, 
+        badgeId: rewardData.badgeId || null 
+      });
+      setMessage('Rewards successfully awarded to team members!');
+      setRewardData({ teamId: '', credits: 0, badgeId: '' });
+      fetchEventData();
+    } catch(err) {
+      setMessage(err.response?.data?.error?.message || 'Failed to award rewards.');
+    } finally { setActionLoading(false); }
+  };
+
+  const handleDistributeRewards = async () => {
+    if (!confirm('Are you sure you want to distribute rewards according to the Reward Tiers configuration? This action will directly issue credits and badges to winning teams and cannot be easily undone.')) return;
+    setActionLoading(true);
+    setMessage('');
+    try {
+      const res = await eventApi.distributeRewards(id);
+      setMessage(res.data?.data?.message || 'Rewards distributed successfully!');
+      fetchEventData();
+    } catch (err) {
+      alert(err.response?.data?.error?.message || 'Failed to distribute automated rewards.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleForceState = async (status) => {
     setActionLoading(true);
     try {
@@ -437,6 +481,40 @@ export default function EventDetailsPage() {
                   <label className="block text-sm mb-1">Description</label>
                   <textarea value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} className="w-full text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] p-2 rounded-lg" rows="4" />
                 </div>
+                
+                <div className="pt-4 border-t border-[var(--color-border)]">
+                  <h4 className="text-sm font-semibold mb-2 flex justify-between items-center">
+                    Reward Tiers
+                    <button type="button" onClick={() => setEditForm({ ...editForm, rewardTiers: [...editForm.rewardTiers, { rank: (editForm.rewardTiers?.length || 0) + 1, credits: 0, badgeId: '' }] })} className="btn btn-secondary text-xs py-1 px-2">+ Add Tier</button>
+                  </h4>
+                  {(!editForm.rewardTiers || editForm.rewardTiers.length === 0) ? (
+                    <div className="text-xs text-[var(--color-text-muted)] italic">No automated rewards configured.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {editForm.rewardTiers.map((tier, idx) => (
+                        <div key={idx} className="flex flex-wrap items-end gap-3 p-3 bg-[var(--color-bg-card)] rounded-xl border border-[var(--color-border)] relative">
+                          <button type="button" onClick={() => setEditForm({...editForm, rewardTiers: editForm.rewardTiers.filter((_, i) => i !== idx)})} className="absolute top-2 right-2 text-xs text-[var(--color-danger)]">✕</button>
+                          <div>
+                            <label className="block text-[10px] text-[var(--color-text-muted)]">Rank Position</label>
+                            <input type="number" min="1" value={tier.rank} onChange={e => { const newTiers = [...editForm.rewardTiers]; newTiers[idx].rank = parseInt(e.target.value) || 1; setEditForm({...editForm, rewardTiers: newTiers}); }} className="w-16 text-sm" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-[var(--color-text-muted)]">Credits</label>
+                            <input type="number" min="0" value={tier.credits} onChange={e => { const newTiers = [...editForm.rewardTiers]; newTiers[idx].credits = parseInt(e.target.value) || 0; setEditForm({...editForm, rewardTiers: newTiers}); }} className="w-24 text-sm" />
+                          </div>
+                          <div className="flex-1 min-w-[120px]">
+                            <label className="block text-[10px] text-[var(--color-text-muted)]">Badge Award</label>
+                            <select value={tier.badgeId} onChange={e => { const newTiers = [...editForm.rewardTiers]; newTiers[idx].badgeId = e.target.value; setEditForm({...editForm, rewardTiers: newTiers}); }} className="w-full text-sm bg-[var(--color-bg-primary)] p-2 rounded-lg border border-[var(--color-border)]">
+                              <option value="">None</option>
+                              {eventBadges.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <button type="submit" disabled={actionLoading} className="btn btn-primary w-full">Save Changes</button>
              </form>
            ) : (
@@ -890,7 +968,29 @@ export default function EventDetailsPage() {
                                     </div>
                                  </form>
                                ) : (
-                                 <button onClick={() => setPointAdjustData({ teamId: t.id, pointsAdded: 0, reason: '' })} className="text-xs btn btn-secondary px-3 py-1.5 whitespace-nowrap">+/- Pts</button>
+                                 <button onClick={() => setPointAdjustData({ teamId: t.id, pointsAdded: 0, reason: '' })} className="text-xs btn btn-secondary px-3 py-1.5 whitespace-nowrap w-full -mt-2 mb-2">+/- Pts</button>
+                               )}
+
+                               {rewardData.teamId === t.id ? (
+                                 <form onSubmit={handleAwardTeam} className="flex flex-col gap-2 items-end min-w-[200px] mt-2 border-t border-[var(--color-border)] pt-2">
+                                    <div className="flex gap-2 items-center w-full justify-between">
+                                      <span className="text-xs font-bold text-[var(--color-primary)]">🪙</span>
+                                      <input type="number" min="0" value={rewardData.credits} onChange={e => setRewardData({...rewardData, credits: e.target.value})} className="w-20 text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] p-1.5 rounded-lg text-right text-[var(--color-text-primary)]" placeholder="0" />
+                                    </div>
+                                    <div className="flex gap-2 items-center w-full justify-between">
+                                      <span className="text-xs font-bold text-[var(--color-accent)]">🎖️</span>
+                                      <select value={rewardData.badgeId} onChange={e => setRewardData({...rewardData, badgeId: e.target.value})} className="w-32 text-sm bg-[var(--color-bg-card)] border border-[var(--color-border)] p-1.5 rounded-lg">
+                                        <option value="">No Badge</option>
+                                        {eventBadges.map(b => <option key={b.id} value={b.id}>{b.name.substring(0, 15)}</option>)}
+                                      </select>
+                                    </div>
+                                    <div className="flex gap-2 w-full justify-end mt-1">
+                                      <button type="submit" disabled={actionLoading} className="text-xs btn btn-primary px-3 py-1.5 w-full bg-[var(--color-success)] border-[var(--color-success)] text-white">Award</button>
+                                      <button type="button" onClick={() => setRewardData({ teamId: '', credits: 0, badgeId: '' })} className="text-xs btn btn-secondary px-3 py-1.5 shrink-0">Cancel</button>
+                                    </div>
+                                 </form>
+                               ) : (
+                                 <button onClick={() => setRewardData({ teamId: t.id, credits: 0, badgeId: '' })} className="text-xs btn btn-secondary px-3 py-1.5 whitespace-nowrap w-full">🏆 Reward</button>
                                )}
                              </td>
                           )}
@@ -927,6 +1027,18 @@ export default function EventDetailsPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            
+            {isOrganizer && event.rewardTiers?.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-[var(--color-border)] flex justify-end">
+                <button 
+                  onClick={handleDistributeRewards} 
+                  disabled={actionLoading} 
+                  className="btn btn-primary"
+                >
+                  Distribute Automated Rewards
+                </button>
               </div>
             )}
           </div>

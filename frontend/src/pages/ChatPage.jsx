@@ -18,6 +18,7 @@ import UserProfilePanel from '../components/UserProfilePanel';
 import GroupSettingsPanel from '../components/GroupSettingsPanel';
 
 import { friendApi } from '../api/friendApi';
+import { storeApi } from '../api/storeApi';
 
 export default function ChatPage() {
   const { id: groupId } = useParams();
@@ -36,6 +37,7 @@ export default function ChatPage() {
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [members, setMembers] = useState([]);
   const [friendIds, setFriendIds] = useState([]);
+  const [badgeMap, setBadgeMap] = useState({});
 
   // @mention state
   const [mentionQuery, setMentionQuery] = useState('');
@@ -99,14 +101,19 @@ export default function ChatPage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [groupRes, msgsRes, friendsRes] = await Promise.all([
+        const [groupRes, msgsRes, friendsRes, badgesRes] = await Promise.all([
           groupApi.getGroup(groupId),
           groupApi.getMessages(groupId, 1, 50),
           friendApi.listFriends().catch(() => ({ data: { data: [] } })),
+          storeApi.getAllBadges().catch(() => ({ data: { data: [] } })),
         ]);
         setGroup(groupRes.data.data);
         setMessages(msgsRes.data.data.messages.reverse()); // oldest first
         setFriendIds(friendsRes.data.data.map(f => f.id));
+
+        const bMap = {};
+        (badgesRes.data?.data || []).forEach(b => bMap[b.id] = b);
+        setBadgeMap(bMap);
 
         // Get members for mention autocomplete
         try {
@@ -573,6 +580,7 @@ export default function ChatPage() {
                     onUserClick={(userId) => setSelectedUserId(userId)}
                     groupId={groupId}
                     members={members}
+                    badgeMap={badgeMap}
                     isFriend={msg.authorId !== user?.id && friendIds.includes(msg.authorId)}
                   />
                 ))
