@@ -27,7 +27,7 @@ model User {
   cohortTags     String[] // e.g. ["cohort-28", "cohort-28-27", "branch-cs"]
   cfHandle       String?
   cfRating       Int?
-  creditBalance  Int      @default(1000)
+  creditBalance  Int      @default(0)
   subscriptionPlan   String?  @default("free") // "free", "pro", "ultra"
   subscriptionExpiry DateTime?
   backupSubscriptionPlan   String?
@@ -95,6 +95,7 @@ model InstitutionConfig {
   domain            String   @default("")
   logoUrl           String?
   isConfigured      Boolean  @default(false) // Gates user registration
+  defaultCredits    Int      @default(1000)  // Credits given to new users on registration
   notesDownloadReward Int    @default(0)     // Credits awarded per resource download
   emailParsingRules Json?    // { pattern, captureGroup, branchCaptureGroup?, branchMapping?, yearOffset }
   membershipConfig  Json?    // { proWeekly: 0.005, proMonthly: 0.015, proYearly: 0.15, ultraWeekly: 0.01, ultraMonthly: 0.03, ultraYearly: 0.3 }

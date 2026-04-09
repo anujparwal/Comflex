@@ -91,6 +91,7 @@ router.patch('/institution', async (req, res, next) => {
     if (req.body.name !== undefined) allowed.name = req.body.name;
     if (req.body.domain !== undefined) allowed.domain = req.body.domain;
     if (req.body.logoUrl !== undefined) allowed.logoUrl = req.body.logoUrl;
+    if (req.body.defaultCredits !== undefined) allowed.defaultCredits = parseInt(req.body.defaultCredits, 10);
     if (req.body.notesDownloadReward !== undefined) allowed.notesDownloadReward = parseInt(req.body.notesDownloadReward, 10);
     if (req.body.membershipConfig !== undefined) allowed.membershipConfig = req.body.membershipConfig;
 
@@ -565,6 +566,7 @@ router.post(
       const hashedPw = await hashPassword(password);
 
       // Create the user
+      const config = await prisma.institutionConfig.findFirst();
       const user = await prisma.user.create({
         data: {
           email,
@@ -575,6 +577,7 @@ router.post(
           hasPassword: true,
           cohortTags: [],
           displayBadges: [],
+          creditBalance: config?.defaultCredits ?? 0,
         },
       });
 
