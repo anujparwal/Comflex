@@ -59,6 +59,11 @@ const TIER_LIMITS = {
   ultra: { uploads: 10, storage: 2 * 1024 * 1024 * 1024 } // 2GB
 };
 
+const ALLOWED_MIMES = ['application/pdf', 'application/rtf', 'text/csv', 'text/plain', 'text/markdown', 'text/html'];
+function isMimeAllowed(mime) {
+  return mime.startsWith('text/') || ALLOWED_MIMES.includes(mime);
+}
+
 // GET my notes
 router.get('/', async (req, res, next) => {
   try {
@@ -105,6 +110,13 @@ router.post('/upload/local', checkAndResetDailyLimits, upload.single('file'), as
 
     const { title } = req.body;
     const finalTitle = title || req.file.originalname;
+
+    if (!isMimeAllowed(req.file.mimetype)) {
+      return error(res, 'UNSUPPORTED_FORMAT', 'Unsupported file format. Please upload PDF, TXT, CSV, or Markdown files.', 400);
+    }
+
+    const existingNote = await prisma.chatbotNote.findFirst({ where: { userId: user.id, title: finalTitle } });
+    if (existingNote) return error(res, 'ALREADY_EXISTS', 'A note with this name already exists.', 409);
 
     // Upload to Gemini
     const geminiData = await uploadFileToGemini(req.file.path, req.file.mimetype, finalTitle);
@@ -160,12 +172,20 @@ router.post('/upload/resource', checkAndResetDailyLimits, body('resourceId').not
     const physicalPath = path.join(__dirname, '../../', resource.fileUrl);
     if (!fs.existsSync(physicalPath)) return error(res, 'FILE_MISSING', 'Physical resource file missing', 404);
 
+    if (!isMimeAllowed(resource.mimetype)) {
+      return error(res, 'UNSUPPORTED_FORMAT', 'Resource format not supported by Gemini (use PDF, TXT, CSV).', 400);
+    }
+
+    const finalTitle = resource.title || resource.fileName;
+    const existingNote = await prisma.chatbotNote.findFirst({ where: { userId: user.id, title: finalTitle } });
+    if (existingNote) return error(res, 'ALREADY_EXISTS', 'This resource has already been added to your notes.', 409);
+
     const geminiData = await uploadFileToGemini(physicalPath, resource.mimetype, resource.fileName);
 
     const note = await prisma.chatbotNote.create({
       data: {
         userId: user.id,
-        title: resource.title || resource.fileName,
+        title: finalTitle,
         geminiFileUri: geminiData.uri,
         geminiFileName: geminiData.name,
         fileSize: resource.fileSize,
