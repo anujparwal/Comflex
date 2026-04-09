@@ -11,10 +11,21 @@ export default function StorePage() {
   const [allBadges, setAllBadges] = useState([]);
   const [ledger, setLedger] = useState({ balance: 0, transactions: [] });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('store'); // store, inventory, ledger, (admin)
+  const [activeTab, setActiveTab] = useState('store'); // store, membership, inventory, ledger, (admin)
+  const [pricingConfig, setPricingConfig] = useState(null);
+  const [popup, setPopup] = useState({ show: false, message: '', isError: false });
+
+  const showPopup = (message, isError = false) => {
+    setPopup({ show: true, message, isError });
+  };
 
   // Admin form specific
   const [badgeForm, setBadgeForm] = useState({ name: '', description: '', imageUrl: '', isEventBadge: false });
+  const [adminApi, setAdminApi] = useState(null); 
+  
+  useEffect(() => {
+    import('../api/adminApi').then(m => setAdminApi(m.adminApi));
+  }, []);
   const [badgeImage, setBadgeImage] = useState(null);
   const [listingForm, setListingForm] = useState({ badgeId: '', price: 0, quantity: -1 });
   const [mintForm, setMintForm] = useState({ userId: '', amount: 100 });
@@ -24,12 +35,12 @@ export default function StorePage() {
     try {
       setMembershipLoading(true);
       await storeApi.buyMembership({ tier, duration });
-      alert(`Successfully upgraded to ${tier.toUpperCase()} ${duration}!`);
+      showPopup(`Successfully upgraded to ${tier.toUpperCase()} ${duration}!`);
       refreshProfile();
       fetchData();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.error?.message || err.message || 'Membership purchase failed');
+      showPopup(err.response?.data?.error?.message || err.message || 'Membership purchase failed', true);
     } finally {
       setMembershipLoading(false);
     }
@@ -38,7 +49,7 @@ export default function StorePage() {
   const handleBuyCredits = async (amount, priceEth) => {
     try {
       if (!window.ethereum) {
-        alert('MetaMask is not installed!');
+        showPopup('MetaMask is not installed!', true);
         return;
       }
       setMembershipLoading(true);
@@ -54,16 +65,16 @@ export default function StorePage() {
         value: ethers.parseEther(priceEth.toString())
       });
       
-      alert(`Transaction sent! Please wait... Hash: ${tx.hash}`);
+      showPopup(`Transaction sent! Please wait... Hash: ${tx.hash}`);
       await tx.wait(); 
       
       await storeApi.buyCredits({ txHash: tx.hash, amount });
-      alert(`Successfully purchased ${amount} credits!`);
+      showPopup(`Successfully purchased ${amount} credits!`);
       refreshProfile();
       fetchData();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.error?.message || err.message || 'Credit purchase failed');
+      showPopup(err.response?.data?.error?.message || err.message || 'Credit purchase failed', true);
     } finally {
       setMembershipLoading(false);
     }
@@ -91,6 +102,11 @@ export default function StorePage() {
         const res = await storeApi.getLedger();
         setLedger(res.data.data);
       }
+      
+      if (activeTab === 'membership' || activeTab === 'admin') {
+        const cRes = await storeApi.getStoreConfig();
+        setPricingConfig(cRes.data.data);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -101,11 +117,11 @@ export default function StorePage() {
   const handlePurchase = async (listingId) => {
     try {
       await storeApi.purchaseBadge(listingId);
-      // alert('Purchase successful!');
+      showPopup('Purchase successful!');
       fetchData();
       refreshProfile(); // to update credits
     } catch (err) {
-      alert(err.response?.data?.error?.message || 'Purchase failed');
+      showPopup(err.response?.data?.error?.message || 'Purchase failed', true);
     }
   };
 
@@ -124,7 +140,7 @@ export default function StorePage() {
       setBadgeImage(null);
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.error?.message || 'Creation failed');
+      showPopup(err.response?.data?.error?.message || 'Creation failed', true);
     }
   };
 
@@ -136,11 +152,11 @@ export default function StorePage() {
         price: parseInt(listingForm.price, 10),
         quantity: parseInt(listingForm.quantity, 10)
       });
-      alert('Listing created');
+      showPopup('Listing created');
       setListingForm({ badgeId: '', price: 0, quantity: -1 });
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.error?.message || 'Creation failed');
+      showPopup(err.response?.data?.error?.message || 'Creation failed', true);
     }
   };
 
@@ -150,18 +166,47 @@ export default function StorePage() {
       await storeApi.mintCredits(mintForm.userId, parseInt(mintForm.amount, 10));
       setMintForm({ userId: '', amount: 100 });
       fetchData();
-      alert('Credits successfully minted!');
+      showPopup('Credits successfully minted!');
     } catch (err) {
-      alert(err.response?.data?.error?.message || 'Mint failed');
+      showPopup(err.response?.data?.error?.message || 'Mint failed', true);
     }
   };
 
   const isAdmin = user?.globalRing === 0 || user?.canManageStore;
 
+  const handleUpdateConfig = async (e) => {
+    e.preventDefault();
+    if (!adminApi) return;
+    try {
+      await adminApi.updateInstitution({ membershipConfig: pricingConfig });
+      showPopup('Pricing configuration updated successfully!');
+    } catch (err) {
+       showPopup(err.response?.data?.error?.message || 'Update failed', true);
+    }
+  };
+
   return (
     <Layout>
+      {/* Custom Popup Modal */}
+      {popup.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" style={{ animationDuration: '0.2s' }}>
+          <div className={`glass-card p-8 rounded-2xl max-w-sm w-full text-center border-2 shadow-2xl relative transition-transform transform scale-100 ${popup.isError ? 'border-[var(--color-danger)] shadow-[var(--color-danger)]/20' : 'border-[var(--color-success)] shadow-[var(--color-success)]/20'}`}>
+            <button onClick={() => setPopup({ show: false, message: '', isError: false })} className="absolute top-4 right-4 text-[var(--color-text-muted)] hover:text-white transition">✖</button>
+            <div className="text-5xl mb-6">{popup.isError ? '❌' : '🎉'}</div>
+            <h3 className="text-xl font-extrabold mb-3">{popup.isError ? 'Transaction Failed' : 'Success!'}</h3>
+            <p className="text-[var(--color-text-secondary)] mb-8 leading-relaxed font-medium">{popup.message}</p>
+            <button 
+              onClick={() => setPopup({ show: false, message: '', isError: false })} 
+              className={`btn w-full text-white font-bold py-3 rounded-xl shadow-lg transition-transform hover:-translate-y-1 ${popup.isError ? 'bg-[var(--color-danger)] hover:bg-red-600 shadow-red-500/30' : 'bg-[var(--color-success)] hover:bg-green-600 shadow-green-500/30'}`}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto fade-in">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-center sm:justify-between mb-8 flex-wrap gap-4">
           <h1 className="text-3xl font-bold">🛒 Web3 Store & Ledger</h1>
           <div className="flex items-center gap-4">
             <span className="font-semibold text-[var(--color-primary)]">
@@ -212,14 +257,32 @@ export default function StorePage() {
             {activeTab === 'membership' && (
               <div className="flex flex-col items-center gap-8 fade-in">
                  
+                 {/* Active Plan Banner */}
+                 {user?.subscriptionPlan && user?.subscriptionPlan !== 'free' && user?.subscriptionExpiry && new Date(user.subscriptionExpiry) > new Date() && (
+                   <div className={`glass-card p-4 border-2 w-full max-w-4xl text-center shadow-lg ${user.subscriptionPlan === 'ultra' ? 'border-purple-500 bg-purple-500/10' : 'border-blue-500 bg-blue-500/10'}`}>
+                     <h3 className="text-xl font-bold mb-1">
+                       Active Plan: <span className="uppercase">{user.subscriptionPlan}</span>
+                     </h3>
+                     <p className="text-sm font-semibold">
+                       Expires on: {new Date(user.subscriptionExpiry).toLocaleDateString()} at {new Date(user.subscriptionExpiry).toLocaleTimeString()}
+                     </p>
+                     
+                     {user.backupSubscriptionPlan && user.backupSubscriptionExpiry && (
+                       <p className="text-xs mt-2 italic text-[var(--color-text-muted)]">
+                         Your previous {user.backupSubscriptionPlan.toUpperCase()} plan will automatically resume afterwards.
+                       </p>
+                     )}
+                   </div>
+                 )}
+
                  {/* Buy Credits Banner */}
                  <div className="glass-card p-6 border-2 border-yellow-400 bg-yellow-50/10 w-full max-w-4xl text-center">
                    <h3 className="text-xl font-bold mb-2 text-yellow-600">Need more Credits?</h3>
                    <p className="text-sm text-[var(--color-text-muted)] mb-4">Exchange ETH for credits instantly entirely on-chain.</p>
                    <div className="flex justify-center gap-4 flex-wrap">
-                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(100, 0.01)} className="btn bg-yellow-100 text-yellow-800 hover:bg-yellow-200">100 Credits 🪙 (0.01 ETH) </button>
-                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(500, 0.045)} className="btn bg-yellow-400 text-white hover:bg-yellow-500">500 Credits 🪙 (0.045 ETH) </button>
-                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(2000, 0.15)} className="btn bg-yellow-600 text-white hover:bg-yellow-700">2000 Credits 🪙 (0.15 ETH) </button>
+                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(100, pricingConfig?.creditEthPrice?.['100'] || 0.01)} className="btn bg-yellow-100 text-yellow-800 hover:bg-yellow-200">100 Credits 🪙 ({pricingConfig?.creditEthPrice?.['100'] || 0.01} ETH) </button>
+                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(500, pricingConfig?.creditEthPrice?.['500'] || 0.045)} className="btn bg-yellow-400 text-white hover:bg-yellow-500">500 Credits 🪙 ({pricingConfig?.creditEthPrice?.['500'] || 0.045} ETH) </button>
+                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(2000, pricingConfig?.creditEthPrice?.['2000'] || 0.15)} className="btn bg-yellow-600 text-white hover:bg-yellow-700">2000 Credits 🪙 ({pricingConfig?.creditEthPrice?.['2000'] || 0.15} ETH) </button>
                    </div>
                  </div>
 
@@ -233,9 +296,9 @@ export default function StorePage() {
                        <li>✅ Select from 500MB+ notes</li>
                      </ul>
                      <div className="space-y-3 mt-auto">
-                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'weekly')} className="w-full btn bg-blue-100 text-blue-800 hover:bg-blue-200">Weekly - 50 🪙</button>
-                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'monthly')} className="w-full btn btn-primary">Monthly - 150 🪙</button>
-                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'yearly')} className="w-full btn bg-green-100 text-green-800 hover:bg-green-200">Yearly - 1500 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'weekly')} className="w-full btn bg-blue-100 text-blue-800 hover:bg-blue-200">Weekly - {pricingConfig?.proWeekly || 50} 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'monthly')} className="w-full btn btn-primary">Monthly - {pricingConfig?.proMonthly || 150} 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'yearly')} className="w-full btn bg-green-100 text-green-800 hover:bg-green-200">Yearly - {pricingConfig?.proYearly || 1500} 🪙</button>
                      </div>
                    </div>
 
@@ -251,9 +314,9 @@ export default function StorePage() {
                        <li>✅ 2GB+ Storage Limit</li>
                      </ul>
                      <div className="space-y-3 mt-auto">
-                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'weekly')} className="w-full btn bg-purple-100 hover:bg-purple-200 text-purple-800">Weekly - 100 🪙</button>
-                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'monthly')} className="w-full btn bg-purple-600 text-white hover:bg-purple-700">Monthly - 300 🪙</button>
-                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'yearly')} className="w-full btn bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border border-yellow-300">Yearly - 3000 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'weekly')} className="w-full btn bg-purple-100 hover:bg-purple-200 text-purple-800">Weekly - {pricingConfig?.ultraWeekly || 100} 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'monthly')} className="w-full btn bg-purple-600 text-white hover:bg-purple-700">Monthly - {pricingConfig?.ultraMonthly || 300} 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'yearly')} className="w-full btn bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border border-yellow-300">Yearly - {pricingConfig?.ultraYearly || 3000} 🪙</button>
                      </div>
                    </div>
                  </div>
@@ -353,13 +416,36 @@ export default function StorePage() {
                 {user?.globalRing === 0 && (
                   <div className="glass-card p-6">
                     <h2 className="text-xl font-bold mb-4">Mint Credits to User</h2>
-                    <form onSubmit={handleMintCredits} className="space-y-4 max-w-md">
+                    <form onSubmit={handleMintCredits} className="space-y-4 max-w-md mb-8">
                       <input type="text" placeholder="User ID" required className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] p-2 rounded focus:outline-[var(--color-accent)]" 
                         value={mintForm.userId} onChange={e => setMintForm({...mintForm, userId: e.target.value})} />
                       <input type="number" placeholder="Amount" min="1" required className="w-full bg-[var(--color-bg-secondary)] border border-[var(--color-border)] p-2 rounded focus:outline-[var(--color-accent)]" 
                         value={mintForm.amount} onChange={e => setMintForm({...mintForm, amount: e.target.value})} />
                       <button type="submit" className="btn btn-primary w-full text-white bg-[var(--color-success)]">Mint Credits</button>
                     </form>
+                    
+                    <h2 className="text-xl font-bold mb-4 border-t pt-4">Dynamic Store Pricing</h2>
+                    {pricingConfig && (
+                      <form onSubmit={handleUpdateConfig} className="grid grid-cols-2 gap-4 text-sm">
+                        
+                        <div className="col-span-2 font-bold mt-2 border-b">Pro Pricing (🪙)</div>
+                        <label className="flex flex-col">Weekly <input type="number" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.proWeekly || ''} onChange={e => setPricingConfig({...pricingConfig, proWeekly: parseInt(e.target.value)})} /></label>
+                        <label className="flex flex-col">Monthly <input type="number" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.proMonthly || ''} onChange={e => setPricingConfig({...pricingConfig, proMonthly: parseInt(e.target.value)})} /></label>
+                        <label className="flex flex-col">Yearly <input type="number" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.proYearly || ''} onChange={e => setPricingConfig({...pricingConfig, proYearly: parseInt(e.target.value)})} /></label>
+                        
+                        <div className="col-span-2 font-bold mt-2 border-b">Ultra Pricing (🪙)</div>
+                        <label className="flex flex-col">Weekly <input type="number" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.ultraWeekly || ''} onChange={e => setPricingConfig({...pricingConfig, ultraWeekly: parseInt(e.target.value)})} /></label>
+                        <label className="flex flex-col">Monthly <input type="number" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.ultraMonthly || ''} onChange={e => setPricingConfig({...pricingConfig, ultraMonthly: parseInt(e.target.value)})} /></label>
+                        <label className="flex flex-col">Yearly <input type="number" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.ultraYearly || ''} onChange={e => setPricingConfig({...pricingConfig, ultraYearly: parseInt(e.target.value)})} /></label>
+                        
+                        <div className="col-span-2 font-bold mt-2 border-b">Credit Currency Rates (ETH)</div>
+                        <label className="flex flex-col">100 Credits <input type="number" step="0.001" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.creditEthPrice?.['100'] || ''} onChange={e => setPricingConfig({...pricingConfig, creditEthPrice: {...pricingConfig.creditEthPrice, '100': parseFloat(e.target.value)}})} /></label>
+                        <label className="flex flex-col">500 Credits <input type="number" step="0.001" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.creditEthPrice?.['500'] || ''} onChange={e => setPricingConfig({...pricingConfig, creditEthPrice: {...pricingConfig.creditEthPrice, '500': parseFloat(e.target.value)}})} /></label>
+                        <label className="flex flex-col">2000 Credits <input type="number" step="0.001" className="p-1 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)]" value={pricingConfig.creditEthPrice?.['2000'] || ''} onChange={e => setPricingConfig({...pricingConfig, creditEthPrice: {...pricingConfig.creditEthPrice, '2000': parseFloat(e.target.value)}})} /></label>
+                        
+                        <button type="submit" className="col-span-2 btn btn-primary mt-2 flex items-center justify-center">💾 Save Dynamic Configuration</button>
+                      </form>
+                    )}
                   </div>
                 )}
                 

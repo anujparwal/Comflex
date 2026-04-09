@@ -1,6 +1,9 @@
 import api from './client';
 
 export const storeApi = {
+  // Store Config (Dynamic Pricing)
+  getStoreConfig: () => api.get('/store/config'),
+
   // Store
   getAllBadges: () => api.get('/store/badges'),
   getListings: () => api.get('/store/listings'),

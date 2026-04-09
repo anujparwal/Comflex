@@ -92,6 +92,7 @@ router.patch('/institution', async (req, res, next) => {
     if (req.body.domain !== undefined) allowed.domain = req.body.domain;
     if (req.body.logoUrl !== undefined) allowed.logoUrl = req.body.logoUrl;
     if (req.body.notesDownloadReward !== undefined) allowed.notesDownloadReward = parseInt(req.body.notesDownloadReward, 10);
+    if (req.body.membershipConfig !== undefined) allowed.membershipConfig = req.body.membershipConfig;
 
     const updated = await prisma.institutionConfig.update({
       where: { id: config.id },
