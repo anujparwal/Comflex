@@ -265,6 +265,13 @@ exports.createTeam = async (req, res, next) => {
     const hasStarted = event.status === 'ongoing' || event.status === 'completed' || (event.autoStart && new Date() >= new Date(event.startDate));
     if (hasStarted) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Team formation is closed. The event has already started.' } });
 
+    const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (event.targetTags && event.targetTags.length > 0) {
+      if (!currentUser.cohortTags || !event.targetTags.some(tag => currentUser.cohortTags.includes(tag))) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You are not eligible to participate in this event.' } });
+      }
+    }
+
     // Check if user is already in a team for this event
     const existingTeam = await prisma.eventTeamMember.findFirst({
       where: {
@@ -348,6 +355,16 @@ exports.inviteToTeam = async (req, res, next) => {
       return res.status(400).json({ error: { code: 'CONFLICT', message: 'Team is full.' } });
     }
 
+    const invitedUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!invitedUser) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found.' } });
+    
+    if (event.targetTags && event.targetTags.length > 0) {
+      if (!invitedUser.cohortTags || !event.targetTags.some(tag => invitedUser.cohortTags.includes(tag))) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'User is not eligible for this event.' } });
+      }
+    }
+
+
     const existingInvite = await prisma.eventTeamInvite.findUnique({
       where: { teamId_invitedUserId: { teamId, invitedUserId: userId } }
     });
@@ -386,6 +403,17 @@ exports.acceptTeamInvite = async (req, res, next) => {
     const hasStarted = event.status === 'ongoing' || event.status === 'completed' || (event.autoStart && new Date() >= new Date(event.startDate));
     if (hasStarted) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot join. The event has already started.' } });
 
+    const membersCount = await prisma.eventTeamMember.count({ where: { teamId: invite.teamId } });
+    if (membersCount >= event.maxTeamSize) {
+      return res.status(400).json({ error: { code: 'CONFLICT', message: 'Team is already full.' } });
+    }
+
+    const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (event.targetTags && event.targetTags.length > 0) {
+      if (!currentUser.cohortTags || !event.targetTags.some(tag => currentUser.cohortTags.includes(tag))) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You are not eligible for this event.' } });
+      }
+    }
 
     // Check if user is already in a team
     const existingTeam = await prisma.eventTeamMember.findFirst({

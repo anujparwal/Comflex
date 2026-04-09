@@ -235,6 +235,22 @@ export default function EventDetailsPage() {
            <p className="text-sm text-[var(--color-text-secondary)] mb-6">
              {new Date(event.startDate).toLocaleString()} • {event.category}
            </p>
+
+           <div className="flex flex-col md:flex-row gap-6 mb-8 mt-4 justify-between items-start md:items-center">
+             {isUpcoming && <CountdownClock targetDate={start} label="Time until Start" />}
+             {isOngoing && <CountdownClock targetDate={end} label="Time Remaining" />}
+             {isCompleted && <div className="text-xl font-bold text-[var(--color-text-muted)] py-4">Event has Ended.</div>}
+
+             {isOrganizer && (
+               <div className="flex gap-2">
+                 {(isUpcoming || isOngoing) && (
+                    <button onClick={() => handleForceState(isUpcoming ? 'ongoing' : 'completed')} disabled={actionLoading} className="btn btn-primary">
+                      {isUpcoming ? 'Force Start Event' : 'End Event Early'}
+                    </button>
+                 )}
+               </div>
+             )}
+           </div>
            
            {isEditing ? (
              <form onSubmit={handleUpdateEvent} className="p-4 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-xl space-y-4">
@@ -435,7 +451,12 @@ export default function EventDetailsPage() {
                       />
                       {searchResults.length > 0 ? (
                         <div className="bg-[var(--color-bg-card)] border border-[var(--color-border)] rounded-xl p-2 max-h-48 overflow-y-auto">
-                          {searchResults.filter(u => !userTeam.members.some(m => m.userId === u.id)).map(u => (
+                          {searchResults.filter(u => {
+                            const isMember = userTeam.members.some(m => m.userId === u.id);
+                            const isInvited = userTeam.invites?.some(i => i.invitedUserId === u.id);
+                            const isEligible = !event.targetTags || event.targetTags.length === 0 || event.targetTags.some(tag => (u.cohortTags || []).includes(tag));
+                            return !isMember && !isInvited && isEligible;
+                          }).map(u => (
                             <div key={u.id} className="flex items-center justify-between p-3 hover:bg-[var(--color-bg-secondary)] rounded-lg transition-colors">
                               <div className="flex items-center gap-3">
                                 <img src={u.avatarUrl || '/default-avatar.png'} className="w-8 h-8 rounded-full" />
@@ -465,7 +486,7 @@ export default function EventDetailsPage() {
               <div className="space-y-6">
                 {pendingInvites.length > 0 && (
                   <div className="p-5 bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 rounded-xl shadow-sm">
-                    <h5 className="font-bold text-lg mb-4 text-[var(--color-accent)]">You Have Pending Invites!</h5>
+                                        <h5 className="font-bold text-lg mb-4 text-[var(--color-accent)]">You Have Pending Invites!</h5>
                     <div className="space-y-3">
                        {pendingInvites.map(invite => {
                          const targetTeam = teams.find(t => t.id === invite.teamId);
@@ -473,7 +494,12 @@ export default function EventDetailsPage() {
                            <div key={invite.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-[var(--color-bg-primary)] border border-[var(--color-accent)]/20 p-4 rounded-xl gap-4">
                              <div className="text-sm">
                                <div className="font-bold text-base mb-1">{targetTeam?.name}</div>
-                               <div className="text-[var(--color-text-secondary)]">Invited by <strong>{invite.invitedBy?.displayName || 'Team Leader'}</strong></div>
+                               <div className="text-[var(--color-text-secondary)]">Invited by <strong>{targetTeam?.leader?.displayName || 'Team Leader'}</strong></div>
+                               {targetTeam?.members?.length > 0 && (
+                                 <div className="mt-2 text-xs text-[var(--color-text-secondary)]">
+                                   <span className="font-semibold">Current Members:</span> {targetTeam.members.map(m => m.user.displayName).join(', ')}
+                                 </div>
+                               )}
                              </div>
                              <div className="flex gap-2 shrink-0">
                                <button 
@@ -515,6 +541,37 @@ export default function EventDetailsPage() {
                     </button>
                   </form>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* LEADERBOARD SECTION */}
+        {event.isTeamEvent && (isOngoing || isCompleted) && (
+          <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-2xl p-6 shadow-sm mt-6">
+            <h3 className="text-xl font-bold mb-4 gradient-text">Live Leaderboard</h3>
+            {leaderboard.length === 0 ? (
+              <p className="text-[var(--color-text-secondary)] italic">No scoreboard data available yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)] text-sm text-[var(--color-text-secondary)]">
+                      <th className="p-3">Rank</th>
+                      <th className="p-3">Team</th>
+                      <th className="p-3 text-right">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((t, i) => (
+                      <tr key={t.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-bg-primary)] transition-colors">
+                        <td className="p-3 font-bold">#{i + 1}</td>
+                        <td className="p-3">{t.name}</td>
+                        <td className="p-3 text-right font-mono font-bold text-[var(--color-accent)]">{t.score}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
