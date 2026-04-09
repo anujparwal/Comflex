@@ -270,7 +270,7 @@ export default function ProfilePage() {
               </div>
               <div>
                 <span className="text-sm text-[var(--color-text-muted)]">Credits</span>
-                <p className="text-[var(--color-text-secondary)]">{user.creditBalance ?? 0}</p>
+                <p className="text-[var(--color-text-secondary)]">{user.globalRing === 0 ? '∞' : (user.creditBalance ?? 0)}</p>
               </div>
               <div>
                 <span className="text-sm text-[var(--color-text-muted)]">Joined</span>

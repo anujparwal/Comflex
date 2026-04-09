@@ -28,6 +28,12 @@ model User {
   cfHandle       String?
   cfRating       Int?
   creditBalance  Int      @default(0)
+  subscriptionPlan   String?  @default("free") // "free", "pro", "ultra"
+  subscriptionExpiry DateTime?
+  chatbotStorageUsed Int?     @default(0) // in bytes
+  dailyUploadCount   Int?     @default(0)
+  lastUploadDate     DateTime? @default(now())
+  dailyChatTokens    Int?     @default(20) // limits free tier messages
   displayBadges  String[] // badge IDs currently displayed (max 5)
 
   // Google OAuth fields
@@ -71,6 +77,7 @@ model User {
 
   // Credits & Badges Relations
   acquiredBadges    UserBadge[]
+  chatbotNotes      ChatbotNote[]
   canManageStore    Boolean   @default(false) // Whether user can manage store (create badges/listings)
   sentTransactions  Transaction[] @relation("Sender")
   receivedTransactions Transaction[] @relation("Receiver")
@@ -88,6 +95,7 @@ model InstitutionConfig {
   isConfigured      Boolean  @default(false) // Gates user registration
   notesDownloadReward Int    @default(0)     // Credits awarded per resource download
   emailParsingRules Json?    // { pattern, captureGroup, branchCaptureGroup?, branchMapping?, yearOffset }
+  membershipConfig  Json?    // { proWeekly: 0.005, proMonthly: 0.015, proYearly: 0.15, ultraWeekly: 0.01, ultraMonthly: 0.03, ultraYearly: 0.3 }
   cohortConfig      Json?    // { seniorOffset: -1, juniorOffset: +1, seniorAutoElevate: true }
   autoJoinRules     Json?    // [{ matchField: "year"|"branch"|"both", matchValue: "28", groupId: "..." }]
   createdAt         DateTime @default(now())
@@ -503,12 +511,31 @@ model Transaction {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   senderId    String?  @db.ObjectId // null if admin/system minting
   receiverId  String   @db.ObjectId
-  amount      Int
-  type        String   // "transfer", "download_reward", "event_reward", "purchase", "admin_mint"
+  amount      Int?
+  type        String   // "transfer", "download_reward", "event_reward", "purchase", "admin_mint", "crypto_purchase"
   referenceId String?  // e.g. Resource ID, Event ID, Chat Message ID
+  cryptoAmount String? // String to prevent precision loss for ETH
+  tier         String?
+  duration     String?
   createdAt   DateTime @default(now())
 
   sender      User?    @relation("Sender", fields: [senderId], references: [id])
   receiver    User     @relation("Receiver", fields: [receiverId], references: [id])
+}
+
+// ============================================================
+// CHATBOT NOTES
+// ============================================================
+model ChatbotNote {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @db.ObjectId
+  title           String
+  geminiFileUri   String
+  geminiFileName  String
+  fileSize        Int
+  mimetype        String?
+  createdAt       DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 

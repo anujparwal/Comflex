@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import Layout from '../components/Layout';
 import { storeApi } from '../api/storeApi';
+import { ethers } from 'ethers';
 
 export default function StorePage() {
   const { user, refreshProfile } = useAuth();
@@ -17,6 +18,56 @@ export default function StorePage() {
   const [badgeImage, setBadgeImage] = useState(null);
   const [listingForm, setListingForm] = useState({ badgeId: '', price: 0, quantity: -1 });
   const [mintForm, setMintForm] = useState({ userId: '', amount: 100 });
+  const [membershipLoading, setMembershipLoading] = useState(false);
+
+  const handleBuyMembership = async (tier, duration) => {
+    try {
+      setMembershipLoading(true);
+      await storeApi.buyMembership({ tier, duration });
+      alert(`Successfully upgraded to ${tier.toUpperCase()} ${duration}!`);
+      refreshProfile();
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.error?.message || err.message || 'Membership purchase failed');
+    } finally {
+      setMembershipLoading(false);
+    }
+  };
+
+  const handleBuyCredits = async (amount, priceEth) => {
+    try {
+      if (!window.ethereum) {
+        alert('MetaMask is not installed!');
+        return;
+      }
+      setMembershipLoading(true);
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      const signer = await provider.getSigner();
+      
+      const treasury = import.meta.env.VITE_TREASURY_ADDRESS;
+      if (!treasury) throw new Error("Treasury not configured");
+
+      const tx = await signer.sendTransaction({
+        to: treasury,
+        value: ethers.parseEther(priceEth.toString())
+      });
+      
+      alert(`Transaction sent! Please wait... Hash: ${tx.hash}`);
+      await tx.wait(); 
+      
+      await storeApi.buyCredits({ txHash: tx.hash, amount });
+      alert(`Successfully purchased ${amount} credits!`);
+      refreshProfile();
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.error?.message || err.message || 'Credit purchase failed');
+    } finally {
+      setMembershipLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -114,18 +165,19 @@ export default function StorePage() {
           <h1 className="text-3xl font-bold">🛒 Web3 Store & Ledger</h1>
           <div className="flex items-center gap-4">
             <span className="font-semibold text-[var(--color-primary)]">
-              🪙 Credits: {user?.creditBalance ?? 0}
+              🪙 Credits: {user?.globalRing === 0 ? '∞' : (user?.creditBalance ?? 0)}
             </span>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-6 sticky top-0 bg-[var(--color-bg-primary)] z-10 py-2">
-          <button onClick={() => setActiveTab('store')} className={`btn ${activeTab === 'store' ? 'btn-primary' : 'btn-secondary'}`}>Badges Store</button>
-          <button onClick={() => setActiveTab('inventory')} className={`btn ${activeTab === 'inventory' ? 'btn-primary' : 'btn-secondary'}`}>My Inventory</button>
-          <button onClick={() => setActiveTab('ledger')} className={`btn ${activeTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}>Ledger History</button>
+        <div className="flex gap-4 mb-6 sticky top-0 bg-[var(--color-bg-primary)] z-10 py-2 overflow-x-auto">
+          <button onClick={() => setActiveTab('store')} className={`btn whitespace-nowrap ${activeTab === 'store' ? 'btn-primary' : 'btn-secondary'}`}>Badges Store</button>
+          <button onClick={() => setActiveTab('membership')} className={`btn whitespace-nowrap bg-purple-600 text-white ${activeTab === 'membership' ? 'ring-2 ring-purple-400' : 'opacity-80'}`}>🌟 Memberships</button>
+          <button onClick={() => setActiveTab('inventory')} className={`btn whitespace-nowrap ${activeTab === 'inventory' ? 'btn-primary' : 'btn-secondary'}`}>My Inventory</button>
+          <button onClick={() => setActiveTab('ledger')} className={`btn whitespace-nowrap ${activeTab === 'ledger' ? 'btn-primary' : 'btn-secondary'}`}>Ledger History</button>
           {isAdmin && (
-            <button onClick={() => setActiveTab('admin')} className={`btn ${activeTab === 'admin' ? 'bg-[var(--color-danger)] text-white' : 'btn-secondary'}`}>⚙️ Admin</button>
+            <button onClick={() => setActiveTab('admin')} className={`btn whitespace-nowrap ${activeTab === 'admin' ? 'bg-[var(--color-danger)] text-white' : 'btn-secondary'}`}>⚙️ Admin</button>
           )}
         </div>
 
@@ -147,13 +199,64 @@ export default function StorePage() {
                     </div>
                     <button 
                       onClick={() => handlePurchase(l.id)} 
-                      disabled={user?.creditBalance < l.price || (l.quantity !== -1 && l.sold >= l.quantity)}
+                      disabled={(user?.globalRing !== 0 && user?.creditBalance < l.price) || (l.quantity !== -1 && l.sold >= l.quantity)}
                       className="btn btn-primary w-full mt-4"
                     >
                       {l.quantity !== -1 && l.sold >= l.quantity ? 'Sold Out' : 'Buy Now'}
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {activeTab === 'membership' && (
+              <div className="flex flex-col items-center gap-8 fade-in">
+                 
+                 {/* Buy Credits Banner */}
+                 <div className="glass-card p-6 border-2 border-yellow-400 bg-yellow-50/10 w-full max-w-4xl text-center">
+                   <h3 className="text-xl font-bold mb-2 text-yellow-600">Need more Credits?</h3>
+                   <p className="text-sm text-[var(--color-text-muted)] mb-4">Exchange ETH for credits instantly entirely on-chain.</p>
+                   <div className="flex justify-center gap-4 flex-wrap">
+                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(100, 0.01)} className="btn bg-yellow-100 text-yellow-800 hover:bg-yellow-200">100 Credits 🪙 (0.01 ETH) </button>
+                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(500, 0.045)} className="btn bg-yellow-400 text-white hover:bg-yellow-500">500 Credits 🪙 (0.045 ETH) </button>
+                      <button disabled={membershipLoading} onClick={() => handleBuyCredits(2000, 0.15)} className="btn bg-yellow-600 text-white hover:bg-yellow-700">2000 Credits 🪙 (0.15 ETH) </button>
+                   </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mx-auto">
+                   <div className="glass-card p-6 flex flex-col border-2 border-[var(--color-border)] hover:border-blue-400 transition">
+                     <h3 className="text-2xl font-bold mb-2">Pro Plan</h3>
+                     <p className="text-[var(--color-text-muted)] flex-1 text-sm mb-6 pb-4 border-b">Great for regular students. Access more notes and unlimited AI chats.</p>
+                     <ul className="mb-6 space-y-2 text-sm">
+                       <li>✅ 5 Uploads daily</li>
+                       <li>✅ Unlimited Chats</li>
+                       <li>✅ Select from 500MB+ notes</li>
+                     </ul>
+                     <div className="space-y-3 mt-auto">
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'weekly')} className="w-full btn bg-blue-100 text-blue-800 hover:bg-blue-200">Weekly - 50 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'monthly')} className="w-full btn btn-primary">Monthly - 150 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('pro', 'yearly')} className="w-full btn bg-green-100 text-green-800 hover:bg-green-200">Yearly - 1500 🪙</button>
+                     </div>
+                   </div>
+
+                   <div className="glass-card p-6 flex flex-col border-2 border-purple-500 shadow-purple-500/20 shadow-xl relative overflow-hidden">
+                     <div className="absolute top-4 right-[-30px] bg-purple-500 text-white font-bold text-xs py-1 px-10 rotate-45">BEST</div>
+                     <h3 className="text-2xl font-bold mb-2 text-purple-600">Ultra Plan</h3>
+                     <p className="text-[var(--color-text-muted)] flex-1 text-sm mb-6 pb-4 border-b">The ultimate study companion. Upload local files directly.</p>
+                     <ul className="mb-6 space-y-2 text-sm font-semibold text-gray-800">
+                       <li>✅ 10 Uploads daily</li>
+                       <li>✅ Upload from Local Device</li>
+                       <li>✅ Unlimited Chats</li>
+                       <li>✅ Priority Gemini Model API</li>
+                       <li>✅ 2GB+ Storage Limit</li>
+                     </ul>
+                     <div className="space-y-3 mt-auto">
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'weekly')} className="w-full btn bg-purple-100 hover:bg-purple-200 text-purple-800">Weekly - 100 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'monthly')} className="w-full btn bg-purple-600 text-white hover:bg-purple-700">Monthly - 300 🪙</button>
+                       <button disabled={membershipLoading} onClick={() => handleBuyMembership('ultra', 'yearly')} className="w-full btn bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border border-yellow-300">Yearly - 3000 🪙</button>
+                     </div>
+                   </div>
+                 </div>
               </div>
             )}
 
