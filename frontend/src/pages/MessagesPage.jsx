@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dmApi } from '../api/dmApi';
 import { storeApi } from '../api/storeApi';
+import { userApi } from '../api/userApi';
 import { AuthContext } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 import Layout from '../components/Layout';
@@ -28,6 +29,7 @@ export default function MessagesPage() {
   const [showCreditTransfer, setShowCreditTransfer] = useState(false);
   const [creditAmount, setCreditAmount] = useState('');
   const [creditMsg, setCreditMsg] = useState('');
+  const [fallbackPartner, setFallbackPartner] = useState(null);
   const messagesEndRef = useRef(null);
 
   // Fetch conversation list
@@ -66,6 +68,15 @@ export default function MessagesPage() {
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
+
+  // Fetch partner profile if it's a new conversation
+  useEffect(() => {
+    setFallbackPartner(null);
+    if (!activeUserId) return;
+    userApi.getUserProfile(activeUserId)
+      .then(res => setFallbackPartner(res.data.data))
+      .catch((err) => console.error('Failed to load partner info', err));
+  }, [activeUserId]);
 
   // Subscribe to real-time DM events
   useEffect(() => {
@@ -155,7 +166,7 @@ export default function MessagesPage() {
     }
   };
 
-  const activePartner = conversations.find(c => c.partner?.id === activeUserId)?.partner;
+  const activePartner = conversations.find(c => c.partner?.id === activeUserId)?.partner || fallbackPartner;
 
   const handleCreditTransfer = async () => {
     const amount = parseInt(creditAmount, 10);
