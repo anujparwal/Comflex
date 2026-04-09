@@ -5,14 +5,19 @@
 ## Features
 
 - **Google OAuth Registration** — Students sign up with their college Google account
+- **Immersive Landing Page** — High-end GSAP scroll animations, SVG path wiping, and Framer Motion elements
 - **Real-time Group Chat** — WebSocket-powered messaging with typing indicators
 - **Cohort Auto-Tagging** — Automatic year/branch detection from college email
 - **Friends System** — Send/accept/reject friend requests 
 - **Direct Messaging** — 1-on-1 DMs between friends
 - **Ring-based RBAC** — Hierarchical permission system (Admin → Manager → Elevated → Member)
+- **Event Management & Rewards** — Create events with size limits, handle registrations, and distribute tiered rewards
+- **Virtual Badge Store** — Manage platform inventory, allow students to redeem medals (Gold/Silver/Bronze) for their profile
+- **AI Chatbot Integration** — Smart context-aware bot paths for student assistance
+- **Resource Sharing** — Direct file/link sharing dedicated within system resources
 - **Admin Dashboard** — Institution setup, user management, cohort configuration
 - **Auto-Join Rules** — Configure which groups users automatically join based on year/branch
-- **Pluggable Email Service** — Console (dev) or SMTP for verification and password resets
+- **Pluggable Web Deployments** — Fully configured Vercel SPA routing (`vercel.json`) alongside standard setups
 
 ## Tech Stack
 
@@ -224,6 +229,11 @@ npm run dev
 | `POST /api/v1/friends/request` | Send friend request |
 | `GET /api/v1/dm` | List DM conversations |
 | `POST /api/v1/dm/:userId` | Send a DM |
+| `USE /api/v1/events` | Events, team formation & submissions |
+| `USE /api/v1/store` | Badge inventory, rewards & purchases |
+| `USE /api/v1/groups` | Group chats, members & ring checks |
+| `USE /api/v1/resources` | File sharing and resource nodes |
+| `USE /api/v1/chatbot` | Conversational AI interfaces |
 | `GET /api/v1/admin/auto-join-rules` | Get auto-join rules |
 | `PUT /api/v1/admin/auto-join-rules` | Set auto-join rules |
 

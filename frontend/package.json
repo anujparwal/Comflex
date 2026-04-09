@@ -10,9 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@gsap/react": "^2.1.2",
     "@react-oauth/google": "^0.13.4",
     "axios": "^1.14.0",
     "ethers": "^6.16.0",
+    "framer-motion": "^12.38.0",
+    "gsap": "^3.14.2",
     "lucide-react": "^1.8.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
