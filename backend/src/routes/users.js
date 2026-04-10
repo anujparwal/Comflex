@@ -9,6 +9,8 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+const env = require('../config/env');
 const authMiddleware = require('../middleware/auth');
 const userService = require('../services/userService');
 const { success, error } = require('../utils/apiResponse');
@@ -19,9 +21,14 @@ const router = express.Router();
 // Avatar Upload Config (multer)
 // Stored locally in /uploads for dev; use S3 in production.
 // ============================================================
+const uploadDir = env.STORAGE_PATH;
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../uploads'));
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);

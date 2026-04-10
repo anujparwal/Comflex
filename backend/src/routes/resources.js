@@ -7,6 +7,7 @@ const { body, query, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const env = require('../config/env');
 const authMiddleware = require('../middleware/auth');
 const prisma = require('../prisma');
 const { success, error } = require('../utils/apiResponse');
@@ -29,7 +30,7 @@ function enforceBatchAccess(req, targetSubCategory) {
 }
 
 // Ensure upload dir exists
-const uploadDir = path.join(__dirname, '../../uploads/resources');
+const uploadDir = path.join(env.STORAGE_PATH, 'resources');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }

@@ -1,5 +1,7 @@
 # Comflex — College Community Platform
 
+**[🚀 Live Demo / Deployment](https://comflex.vercel.app)**
+
 > A modern, real-time college community platform with group chat, cohort management, friend system, and direct messaging.
 
 ## Features
