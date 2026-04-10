@@ -49,7 +49,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // Serve uploaded files (avatars) — dev only; use S3/CDN in production
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(env.STORAGE_PATH));
 
 // ============================================================
 // ROUTES

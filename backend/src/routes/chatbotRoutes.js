@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const env = require('../config/env');
 const authMiddleware = require('../middleware/auth');
 const prisma = require('../prisma');
 const { success, error } = require('../utils/apiResponse');
@@ -10,7 +11,7 @@ const { uploadFileToGemini, deleteGeminiFile, chatWithContext } = require('../se
 
 const router = express.Router();
 
-const uploadDir = path.join(__dirname, '../../uploads/chatbot');
+const uploadDir = path.join(env.STORAGE_PATH, 'chatbot');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }

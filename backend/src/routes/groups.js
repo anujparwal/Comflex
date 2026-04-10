@@ -10,6 +10,7 @@ const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const authMiddleware = require('../middleware/auth');
 const { requireRing, canActOnUser } = require('../middleware/ringCheck');
 const { requireGroupMember, requireGroupPermission } = require('../middleware/groupPermission');
@@ -24,8 +25,13 @@ const { success, error } = require('../utils/apiResponse');
 const router = express.Router();
 
 // Multer config for group avatar uploads
+const groupUploadDir = path.join(env.STORAGE_PATH, 'groups');
+if (!fs.existsSync(groupUploadDir)) {
+  fs.mkdirSync(groupUploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
-  destination: path.join(__dirname, '../../uploads/groups'),
+  destination: groupUploadDir,
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     cb(null, `group-${req.params.id}-${Date.now()}${ext}`);
@@ -42,8 +48,13 @@ const upload = multer({
 });
 
 // Multer config for message attachments
+const messageUploadDir = path.join(env.STORAGE_PATH, 'messages');
+if (!fs.existsSync(messageUploadDir)) {
+  fs.mkdirSync(messageUploadDir, { recursive: true });
+}
+
 const messageStorage = multer.diskStorage({
-  destination: path.join(__dirname, '../../uploads/messages'),
+  destination: messageUploadDir,
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
     cb(null, `msg-${req.params.id}-${Date.now()}${ext}`);

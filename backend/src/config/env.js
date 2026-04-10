@@ -47,6 +47,9 @@ const env = {
 
   // Email API key (for future providers like Resend/SendGrid)
   EMAIL_API_KEY: process.env.EMAIL_API_KEY || '',
+
+  // File Storage Path
+  STORAGE_PATH: process.env.STORAGE_PATH || require('path').join(__dirname, '../../uploads'),
 };
 
 module.exports = env;
